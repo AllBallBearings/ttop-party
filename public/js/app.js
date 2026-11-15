@@ -21,6 +21,7 @@ const els = {
   playerHudBar: document.getElementById('playerHudBar'),
   arStatusDot: document.getElementById('arStatusDot'),
   arStatusText: document.getElementById('arStatusText'),
+  motionBtn: document.getElementById('motionBtn'),
   lockBtn: document.getElementById('lockBtn'),
   modeBtn: document.getElementById('modeBtn'),
   menuBtn: document.getElementById('menuBtn'),
@@ -137,6 +138,7 @@ const arTracker = new ARTracker({
           : 'searching'
     );
     els.modeBtn.textContent = status.mode === 'preview' ? 'AR Cam' : 'Preview';
+    els.motionBtn.style.display = status.mode === 'ar' && status.needsMotionPermission ? 'inline-flex' : 'none';
     els.lockBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
     els.lockBtn.textContent = status.locked ? 'Unlock' : 'Lock';
     els.lockBtn.classList.toggle('active', Boolean(status.locked));
@@ -511,6 +513,7 @@ els.soloModeBtn.addEventListener('click', () => {
 
 els.startGameBtn.addEventListener('click', () => {
   sound.unlock();
+  arTracker.requestMotionPermission();
   if (isSelfHost()) hostController.startGame();
 });
 
@@ -531,15 +534,23 @@ els.backLobbyBtn.addEventListener('click', () => {
   if (isSelfHost()) hostController.returnToLobby();
 });
 
+els.motionBtn.addEventListener('click', () => {
+  sound.unlock();
+  arTracker.requestMotionPermission();
+});
+
 els.menuBtn.addEventListener('click', () => {
+  arTracker.requestMotionPermission();
   els.lobbyModal.classList.toggle('hidden');
 });
 
 els.closeLobbyBtn.addEventListener('click', () => {
+  arTracker.requestMotionPermission();
   els.lobbyModal.classList.add('hidden');
 });
 
 els.lockBtn.addEventListener('click', () => {
+  arTracker.requestMotionPermission();
   arTracker.setLocked(!arTracker.locked);
 });
 

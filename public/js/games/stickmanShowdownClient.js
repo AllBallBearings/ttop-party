@@ -232,41 +232,44 @@ export class StickmanShowdownClient {
     const w = config.arenaWidth || 12;
     const d = config.arenaDepth || 8;
 
-    // Translucent frosted arena plane so printed QR code underneath remains visible
+    // Solid opaque tabletop arena slab (raw <video> still feeds QR tracker underneath)
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      transparent: true,
-      opacity: 0.22,
-      roughness: 0.6,
-      metalness: 0.15,
+      color: 0x334155,
+      transparent: false,
+      opacity: 1.0,
+      roughness: 0.72,
+      metalness: 0.12,
     });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
-    floor.rotation.x = -Math.PI / 2;
+    const slabThickness = 0.16;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(w, slabThickness, d), floorMat);
+    floor.position.y = -slabThickness / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // Glowing grid lines matching reference image
+    // Crisp tactical grid lines on top of the opaque slab
     const gridPoints = [];
     const step = 2.0;
     for (let x = -w / 2; x <= w / 2 + 0.001; x += step) {
-      gridPoints.push(new THREE.Vector3(x, 0.01, -d / 2), new THREE.Vector3(x, 0.01, d / 2));
+      gridPoints.push(new THREE.Vector3(x, 0.008, -d / 2), new THREE.Vector3(x, 0.008, d / 2));
     }
     for (let z = -d / 2; z <= d / 2 + 0.001; z += step) {
-      gridPoints.push(new THREE.Vector3(-w / 2, 0.01, z), new THREE.Vector3(w / 2, 0.01, z));
+      gridPoints.push(new THREE.Vector3(-w / 2, 0.008, z), new THREE.Vector3(w / 2, 0.008, z));
     }
     const gridGeo = new THREE.BufferGeometry().setFromPoints(gridPoints);
     const gridMat = new THREE.LineBasicMaterial({
-      color: 0xe2e8f0,
+      color: 0x94a3b8,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.65,
     });
     this.group.add(new THREE.LineSegments(gridGeo, gridMat));
 
-    // Glowing tabletop border frame
-    const frameMat = new THREE.MeshBasicMaterial({
-      color: 0xbae6fd,
-      transparent: true,
-      opacity: 0.85,
+    // Solid glowing tabletop border frame
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x7dd3fc,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 0.45,
+      roughness: 0.35,
+      metalness: 0.25,
     });
     const borderThickness = 0.12;
     const borderHeight = 0.1;

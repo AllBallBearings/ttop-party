@@ -1,10 +1,74 @@
 import * as THREE from '../vendor/three/three.module.js';
 
+class LowPassFilter {
+  constructor(alpha = 1.0) {
+    this.s = 0;
+    this.initialized = false;
+    this.alpha = alpha;
+  }
+
+  reset() {
+    this.initialized = false;
+    this.s = 0;
+  }
+
+  filter(value, alpha) {
+    this.alpha = Math.max(0.001, Math.min(1, alpha));
+    if (!this.initialized) {
+      this.initialized = true;
+      this.s = value;
+      return value;
+    }
+    this.s = this.alpha * value + (1 - this.alpha) * this.s;
+    return this.s;
+  }
+}
+
 /**
- * Solves an 8x8 linear system A * x = b via Gaussian elimination with partial pivoting.
+ * Adaptive One-Euro Filter: heavy smoothing when still (kills 1px jitter),
+ * fast response when moving.
  */
-function solveLinear8(A, b) {
-  const n = 8;
+class OneEuroFilter {
+  constructor({ minCutoff = 0.65, beta = 0.07, dCutoff = 1.0 } = {}) {
+    this.minCutoff = minCutoff;
+    this.beta = beta;
+    this.dCutoff = dCutoff;
+    this.x = new LowPassFilter();
+    this.dx = new LowPassFilter();
+    this.lastTime = null;
+  }
+
+  _alpha(cutoff, dt) {
+    const tau = 1.0 / (2 * Math.PI * cutoff);
+    return 1.0 / (1.0 + tau / dt);
+  }
+
+  reset() {
+    this.x.reset();
+    this.dx.reset();
+    this.lastTime = null;
+  }
+
+  filter(value, timeSec) {
+    if (this.lastTime === null) {
+      this.lastTime = timeSec;
+      return this.x.filter(value, 1.0);
+    }
+    const dt = Math.max(1 / 120, Math.min(0.25, timeSec - this.lastTime));
+    this.lastTime = timeSec;
+
+    const dVal = (value - this.x.s) / dt;
+    const edVal = this.dx.filter(dVal, this._alpha(this.dCutoff, dt));
+    const cutoff = this.minCutoff + this.beta * Math.abs(edVal);
+    return this.x.filter(value, this._alpha(cutoff, dt));
+  }
+}
+
+/**
+ * Solves an NxN linear system A * x = b via Gaussian elimination with partial pivoting.
+ */
+function solveLinear(A, b) {
+  const n = b.length;
   const M = A.map((row, i) => [...row, b[i]]);
 
   for (let col = 0; col < n; col++) {
@@ -42,11 +106,97 @@ function solveLinear8(A, b) {
 }
 
 /**
+ * Refines 6DoF (position, quaternion) against normalized 2D corner observations
+ * via 4 damped Gauss-Newton iterations to minimize geometric reprojection error.
+ */
+function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
+  const p = pos.clone();
+  const q = quat.clone();
+
+  const evalResiduals = (testP, testQ) => {
+    const r = [];
+    const v = new THREE.Vector3();
+    for (let i = 0; i < 4; i++) {
+      v.set(worldPts[i][0], 0, worldPts[i][1]).applyQuaternion(testQ).add(testP);
+      if (v.z >= -0.05) return null;
+      const u = v.x / -v.z;
+      const w = v.y / -v.z;
+      r.push(u - obsUV[i][0], w - obsUV[i][1]);
+    }
+    return r;
+  };
+
+  const eps = 1e-4;
+  const dq = new THREE.Quaternion();
+  const euler = new THREE.Euler();
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const r0 = evalResiduals(p, q);
+    if (!r0) break;
+
+    const J = Array.from({ length: 8 }, () => new Array(6).fill(0));
+    for (let k = 0; k < 6; k++) {
+      const tp = p.clone();
+      const tq = q.clone();
+      if (k === 0) tp.x += eps;
+      else if (k === 1) tp.y += eps;
+      else if (k === 2) tp.z += eps;
+      else {
+        euler.set(k === 3 ? eps : 0, k === 4 ? eps : 0, k === 5 ? eps : 0, 'XYZ');
+        dq.setFromEuler(euler);
+        tq.multiply(dq);
+      }
+      const rk = evalResiduals(tp, tq);
+      if (!rk) continue;
+      for (let row = 0; row < 8; row++) {
+        J[row][k] = (rk[row] - r0[row]) / eps;
+      }
+    }
+
+    // Normal equations: (J^T J + lambda * I) * delta = -J^T r0
+    const JTJ = Array.from({ length: 6 }, () => new Array(6).fill(0));
+    const JTr = new Array(6).fill(0);
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j < 6; j++) {
+        let sum = 0;
+        for (let row = 0; row < 8; row++) sum += J[row][i] * J[row][j];
+        JTJ[i][j] = sum + (i === j ? 1e-3 : 0);
+      }
+      let rsum = 0;
+      for (let row = 0; row < 8; row++) rsum += J[row][i] * r0[row];
+      JTr[i] = -rsum;
+    }
+
+    const delta = solveLinear(JTJ, JTr);
+    if (!delta) break;
+
+    const stepNorm = Math.hypot(...delta);
+    if (stepNorm < 1e-5) break;
+
+    const nextP = p.clone().add(new THREE.Vector3(delta[0], delta[1], delta[2]));
+    euler.set(delta[3], delta[4], delta[5], 'XYZ');
+    dq.setFromEuler(euler);
+    const nextQ = q.clone().multiply(dq).normalize();
+
+    const rNext = evalResiduals(nextP, nextQ);
+    if (!rNext) break;
+
+    const err0 = r0.reduce((s, val) => s + val * val, 0);
+    const err1 = rNext.reduce((s, val) => s + val * val, 0);
+    if (err1 <= err0) {
+      p.copy(nextP);
+      q.copy(nextQ);
+    } else {
+      break;
+    }
+  }
+
+  return { position: p, quaternion: q };
+}
+
+/**
  * Estimates 6DoF board pose (position + quaternion) in Three.js camera space
  * from the 4 detected QR code corners.
- *
- * Marker plane sits at Y = 0 in board space:
- *   TL = (-m, 0, -m), TR = (+m, 0, -m), BR = (+m, 0, +m), BL = (-m, 0, +m)
  */
 function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize = 1.0) {
   const cx = videoW * 0.5;
@@ -54,10 +204,10 @@ function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize
   const m = markerHalfSize;
 
   const worldPts = [
-    [-m, -m], // topLeft
-    [m, -m],  // topRight
-    [m, m],   // bottomRight
-    [-m, m],  // bottomLeft
+    [-m, -m],
+    [m, -m],
+    [m, m],
+    [-m, m],
   ];
 
   const imgPts = [
@@ -69,11 +219,13 @@ function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize
 
   const A = [];
   const b = [];
+  const obsUV = [];
 
   for (let i = 0; i < 4; i++) {
     const [X, Z] = worldPts[i];
     const u = (imgPts[i].x - cx) / fVideo;
     const v = -(imgPts[i].y - cy) / fVideo;
+    obsUV.push([u, v]);
 
     A.push([X, Z, 1, 0, 0, 0, -u * X, -u * Z]);
     b.push(u);
@@ -81,13 +233,9 @@ function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize
     b.push(v);
   }
 
-  const h = solveLinear8(A, b);
+  const h = solveLinear(A, b);
   if (!h) return null;
 
-  // Homography columns in normalized image space:
-  // [u', v', w']^T = H * [X, Z, 1]^T with u = u'/w', v = v'/w'
-  // Since camera looks along -Z_c: u = X_c / (-Z_c), v = Y_c / (-Z_c)
-  // => [X_c, Y_c, Z_c]^T = lambda * [u', v', -w']^T
   const c1 = new THREE.Vector3(h[0], h[3], -h[6]);
   const c2 = new THREE.Vector3(h[1], h[4], -h[7]);
   const c3 = new THREE.Vector3(h[2], h[5], -1.0);
@@ -97,7 +245,6 @@ function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize
   if (norm1 < 1e-6 || norm2 < 1e-6) return null;
 
   const scale = 2.0 / (norm1 + norm2);
-  // Ensure marker sits in front of the camera (Z_c < 0)
   const sign = c3.z * scale > 0 ? -1 : 1;
 
   const r1 = c1.clone().multiplyScalar(sign * scale);
@@ -106,18 +253,32 @@ function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize
 
   if (t.z > -0.2 || t.length() > 60) return null;
 
-  // Orthonormalize right-handed basis [r1 (X), r2 (Y up), r3 (Z)]
   r1.normalize();
   r3.addScaledVector(r1, -r1.dot(r3)).normalize();
   const r2 = new THREE.Vector3().crossVectors(r3, r1).normalize();
-
-  // Re-orthogonalize r3 to ensure exact frame
   r3.crossVectors(r1, r2).normalize();
 
   const rotMatrix = new THREE.Matrix4().makeBasis(r1, r2, r3);
   const quaternion = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
 
-  return { position: t, quaternion };
+  return refinePoseGaussNewton(t, quaternion, worldPts, obsUV, 4);
+}
+
+const ZEE_AXIS = new THREE.Vector3(0, 0, 1);
+const CAMERA_OFFSET_QUAT = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+function deviceOrientationToQuat(alphaDeg, betaDeg, gammaDeg, screenAngleDeg) {
+  const alpha = THREE.MathUtils.degToRad(alphaDeg || 0);
+  const beta = THREE.MathUtils.degToRad(betaDeg || 0);
+  const gamma = THREE.MathUtils.degToRad(gammaDeg || 0);
+  const orient = THREE.MathUtils.degToRad(screenAngleDeg || 0);
+
+  const euler = new THREE.Euler(beta, alpha, -gamma, 'YXZ');
+  const q = new THREE.Quaternion().setFromEuler(euler);
+  q.multiply(CAMERA_OFFSET_QUAT);
+  const qScreen = new THREE.Quaternion().setFromAxisAngle(ZEE_AXIS, -orient);
+  q.multiply(qScreen);
+  return q;
 }
 
 export class ARTracker {
@@ -126,7 +287,7 @@ export class ARTracker {
     this.canvasEl = canvasEl;
     this.onStatus = onStatus || (() => {});
 
-    this.mode = 'ar'; // 'ar' | 'preview'
+    this.mode = 'ar';
     this.locked = false;
     this.boardScale = 1.0;
 
@@ -143,18 +304,15 @@ export class ARTracker {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.05, 120);
 
-    // Root group anchored to the QR code on the tabletop
     this.boardRoot = new THREE.Group();
     this.boardRoot.visible = false;
     this.scene.add(this.boardRoot);
 
-    // Tabletop preview environment (shown only in preview mode)
     this.previewEnv = this._createPreviewTabletop();
     this.previewEnv.visible = false;
     this.scene.add(this.previewEnv);
 
-    // Lights
-    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x334155, 1.15);
+    const hemi = new THREE.HemisphereLight(0xdbeafe, 0x334155, 1.2);
     this.scene.add(hemi);
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.35);
@@ -170,13 +328,34 @@ export class ARTracker {
     this.boardRoot.add(dirLight);
     this.boardRoot.add(dirLight.target);
 
-    // Smooth target pose
+    // Pose state (camera space, fused with IMU gyroscope)
     this.hasAnchoredOnce = false;
     this.lastSeenAt = 0;
-    this.targetPos = new THREE.Vector3(0, -1.5, -10);
-    this.targetQuat = new THREE.Quaternion();
-    this.smoothedPos = new THREE.Vector3(0, -1.5, -10);
-    this.smoothedQuat = new THREE.Quaternion();
+    this.fusedPos = new THREE.Vector3(0, -1.5, -10);
+    this.fusedQuat = new THREE.Quaternion();
+    this.displayPos = new THREE.Vector3(0, -1.5, -10);
+    this.displayQuat = new THREE.Quaternion();
+
+    // Corner One-Euro filters (8 scalars for 4 corners)
+    this.cornerFilters = Array.from({ length: 8 }, () =>
+      new OneEuroFilter({ minCutoff: 0.55, beta: 0.06, dCutoff: 1.0 })
+    );
+    this.posFilters = [
+      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
+      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
+      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
+    ];
+
+    // IMU / Gyroscope fusion state
+    this.hasImu = false;
+    this.imuNeededPermission =
+      typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function';
+    this.imuPermissionGranted = !this.imuNeededPermission;
+    this.imuQuat = new THREE.Quaternion();
+    this.prevImuQuat = new THREE.Quaternion();
+    this.hasPrevImu = false;
+    this.recentImuSpeed = 0;
 
     // QR worker setup
     this.scanCanvas = document.createElement('canvas');
@@ -200,7 +379,63 @@ export class ARTracker {
 
     this._bindResize();
     this._bindPreviewDrag();
+    this._bindDeviceOrientation();
     this.resize();
+  }
+
+  _bindDeviceOrientation() {
+    const handler = (e) => {
+      if (e.alpha === null || e.beta === null || e.gamma === null) return;
+      const screenAngle =
+        (window.screen && window.screen.orientation && window.screen.orientation.angle) ||
+        window.orientation ||
+        0;
+      const q = deviceOrientationToQuat(e.alpha, e.beta, e.gamma, screenAngle);
+      this.imuQuat.copy(q);
+      this.hasImu = true;
+      this.imuPermissionGranted = true;
+    };
+
+    this._orientationHandler = handler;
+    if (!this.imuNeededPermission && typeof window !== 'undefined') {
+      window.addEventListener('deviceorientation', handler, true);
+    }
+  }
+
+  async requestMotionPermission() {
+    if (!this.imuNeededPermission || this.imuPermissionGranted) return true;
+    try {
+      const res = await DeviceOrientationEvent.requestPermission();
+      if (res === 'granted') {
+        this.imuPermissionGranted = true;
+        window.addEventListener('deviceorientation', this._orientationHandler, true);
+        this._emitStatus();
+        return true;
+      }
+    } catch {
+      // Ignore if not triggered inside user gesture
+    }
+    return false;
+  }
+
+  _emitStatus(extra = {}) {
+    this.onStatus({
+      mode: this.mode,
+      anchored: this.hasAnchoredOnce,
+      locked: this.locked,
+      hasImu: this.hasImu,
+      needsMotionPermission: this.imuNeededPermission && !this.imuPermissionGranted,
+      message: extra.message || (
+        this.mode === 'preview'
+          ? 'Tabletop Preview Mode'
+          : this.locked
+            ? 'Board Locked'
+            : this.hasAnchoredOnce
+              ? 'QR Anchor Active'
+              : 'Point camera at printed QR code on table'
+      ),
+      ...extra,
+    });
   }
 
   _createPreviewTabletop() {
@@ -212,27 +447,9 @@ export class ARTracker {
       metalness: 0.05,
     });
     const table = new THREE.Mesh(tableGeo, tableMat);
-    table.position.set(0, -0.32, 0);
+    table.position.set(0, -0.45, 0);
     table.receiveShadow = true;
     group.add(table);
-
-    // Subtle printed QR anchor decal at center of preview table
-    const qrPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.0, 2.0),
-      new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.85 })
-    );
-    qrPlate.rotation.x = -Math.PI / 2;
-    qrPlate.position.y = 0.002;
-    group.add(qrPlate);
-
-    const qrInner = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.5, 1.5),
-      new THREE.MeshBasicMaterial({ color: 0x0f172a, wireframe: true })
-    );
-    qrInner.rotation.x = -Math.PI / 2;
-    qrInner.position.y = 0.004;
-    group.add(qrInner);
-
     return group;
   }
 
@@ -294,12 +511,7 @@ export class ARTracker {
       this.mode = 'ar';
       this.videoEl.style.display = 'block';
       this.previewEnv.visible = false;
-      this.onStatus({
-        mode: 'ar',
-        anchored: this.hasAnchoredOnce,
-        locked: this.locked,
-        message: this.hasAnchoredOnce ? 'QR Anchor Active' : 'Point camera at printed QR code on table',
-      });
+      this._emitStatus();
       return true;
     } catch (err) {
       console.warn('Camera start failed, switching to Tabletop Preview Mode:', err);
@@ -324,8 +536,7 @@ export class ARTracker {
     this.boardRoot.position.set(0, 0, 0);
     this.boardRoot.quaternion.identity();
     this.boardRoot.scale.setScalar(1);
-    this.onStatus({
-      mode: 'preview',
+    this._emitStatus({
       anchored: true,
       locked: false,
       message: reason || 'Tabletop Preview Mode (drag sky to orbit)',
@@ -345,11 +556,10 @@ export class ARTracker {
 
   setLocked(locked) {
     this.locked = Boolean(locked);
-    this.onStatus({
-      mode: this.mode,
-      anchored: this.hasAnchoredOnce,
-      locked: this.locked,
-      message: this.locked ? 'Board Position Locked' : 'Live QR Tracking Active',
+    this._emitStatus({
+      message: this.locked
+        ? (this.hasImu ? 'QR Locked (Motion Pan Active)' : 'Board Position Locked')
+        : 'Live QR + Motion Tracking',
     });
   }
 
@@ -365,44 +575,77 @@ export class ARTracker {
     const vh = this.lastScanVideoH;
     if (!vw || !vh) return;
 
+    const nowMs = performance.now();
+    const nowSec = nowMs / 1000;
+    const timeSinceLast = nowMs - this.lastSeenAt;
+
+    // Reset 2D corner filters if QR was out of view > 350ms so re-acquisition is instant
+    if (timeSinceLast > 350) {
+      for (const f of this.cornerFilters) f.reset();
+    }
+
     const sx = vw / this.lastScanW;
     const sy = vh / this.lastScanH;
 
+    const rawPts = [
+      result.location.topLeftCorner,
+      result.location.topRightCorner,
+      result.location.bottomRightCorner,
+      result.location.bottomLeftCorner,
+    ];
+
+    const filtPts = rawPts.map((pt, idx) => ({
+      x: this.cornerFilters[idx * 2].filter(pt.x * sx, nowSec),
+      y: this.cornerFilters[idx * 2 + 1].filter(pt.y * sy, nowSec),
+    }));
+
     const scaledCorners = {
-      topLeftCorner: { x: result.location.topLeftCorner.x * sx, y: result.location.topLeftCorner.y * sy },
-      topRightCorner: { x: result.location.topRightCorner.x * sx, y: result.location.topRightCorner.y * sy },
-      bottomRightCorner: { x: result.location.bottomRightCorner.x * sx, y: result.location.bottomRightCorner.y * sy },
-      bottomLeftCorner: { x: result.location.bottomLeftCorner.x * sx, y: result.location.bottomLeftCorner.y * sy },
+      topLeftCorner: filtPts[0],
+      topRightCorner: filtPts[1],
+      bottomRightCorner: filtPts[2],
+      bottomLeftCorner: filtPts[3],
     };
 
     const fVideo = 0.82 * Math.max(vw, vh);
     const pose = estimatePoseFromCorners(scaledCorners, vw, vh, fVideo, 1.0);
     if (!pose) return;
 
-    const now = performance.now();
-    // Reject sudden wild outlier jumps unless anchor has been stale > 750ms
-    if (this.hasAnchoredOnce && now - this.lastSeenAt < 750) {
-      const jumpDist = pose.position.distanceTo(this.targetPos);
-      if (jumpDist > 4.5) return;
-    }
-
-    this.targetPos.copy(pose.position);
-    this.targetQuat.copy(pose.quaternion);
-    this.lastSeenAt = now;
-
     if (!this.hasAnchoredOnce) {
       this.hasAnchoredOnce = true;
-      this.smoothedPos.copy(pose.position);
-      this.smoothedQuat.copy(pose.quaternion);
+      this.fusedPos.copy(pose.position);
+      this.fusedQuat.copy(pose.quaternion);
+      this.displayPos.copy(pose.position);
+      this.displayQuat.copy(pose.quaternion);
       this.boardRoot.visible = true;
+      this.lastSeenAt = nowMs;
+      this._emitStatus({
+        qrData: result.data,
+        message: this.hasImu ? 'QR + Motion Locked' : 'QR Anchor Locked',
+      });
+      return;
     }
 
-    this.onStatus({
-      mode: 'ar',
-      anchored: true,
-      locked: this.locked,
+    // Outlier guard while actively anchored (ignore sudden single-frame misreads)
+    const jumpDist = pose.position.distanceTo(this.fusedPos);
+    const angleDiff = pose.quaternion.angleTo(this.fusedQuat);
+    if (timeSinceLast < 1600 && (jumpDist > 4.0 || angleDiff > 0.7)) {
+      return;
+    }
+
+    this.lastSeenAt = nowMs;
+
+    // When IMU is active and phone is nearly stationary, trust IMU heavily and damp QR noise
+    const isStill = this.hasImu && this.recentImuSpeed < 0.015;
+    const posBlend = !this.hasImu ? 0.35 : isStill ? 0.08 : 0.22;
+    const rotBlend = !this.hasImu ? 0.35 : isStill ? 0.08 : 0.24;
+
+    this.fusedPos.lerp(pose.position, posBlend);
+    this.fusedQuat.slerp(pose.quaternion, rotBlend);
+
+    this._emitStatus({
       qrData: result.data,
-      message: 'QR Anchor Locked',
+      stale: false,
+      message: this.hasImu ? 'QR + Motion Locked' : 'QR Anchor Locked',
     });
   }
 
@@ -419,12 +662,10 @@ export class ARTracker {
       return;
     }
 
-    // AR Mode
     const vw = this.videoEl.videoWidth;
     const vh = this.videoEl.videoHeight;
 
     if (vw > 0 && vh > 0) {
-      // Match Three.js camera projection to CSS object-fit: cover video scaling
       const viewW = window.innerWidth;
       const viewH = window.innerHeight;
       const coverScale = Math.max(viewW / vw, viewH / vh);
@@ -438,10 +679,9 @@ export class ARTracker {
       this.camera.position.set(0, 0, 0);
       this.camera.quaternion.identity();
 
-      // Dispatch QR detection frame to worker if idle
       if (!this.workerBusy && !this.locked && this.videoEl.readyState >= 2) {
-        const targetW = 480;
-        const targetH = Math.max(180, Math.round((vh / vw) * targetW));
+        const targetW = 640;
+        const targetH = Math.max(240, Math.round((vh / vw) * targetW));
         if (this.scanCanvas.width !== targetW || this.scanCanvas.height !== targetH) {
           this.scanCanvas.width = targetW;
           this.scanCanvas.height = targetH;
@@ -461,24 +701,47 @@ export class ARTracker {
       }
     }
 
+    // Apply 60Hz gyroscope delta so panning left/right keeps the board anchored even when QR leaves frame
+    if (this.hasImu) {
+      if (this.hasPrevImu && this.hasAnchoredOnce) {
+        const deltaCam = this.imuQuat.clone().invert().multiply(this.prevImuQuat);
+        const stepAngle = this.imuQuat.angleTo(this.prevImuQuat);
+        this.recentImuSpeed = this.recentImuSpeed * 0.7 + stepAngle * 0.3;
+
+        this.fusedPos.applyQuaternion(deltaCam);
+        this.fusedQuat.premultiply(deltaCam).normalize();
+        this.displayPos.applyQuaternion(deltaCam);
+        this.displayQuat.premultiply(deltaCam).normalize();
+      }
+      this.prevImuQuat.copy(this.imuQuat);
+      this.hasPrevImu = true;
+    }
+
     if (this.hasAnchoredOnce) {
-      const alpha = Math.min(1, dt * 14);
-      this.smoothedPos.lerp(this.targetPos, alpha);
-      this.smoothedQuat.slerp(this.targetQuat, alpha);
+      const nowSec = performance.now() / 1000;
+      const smoothPos = new THREE.Vector3(
+        this.posFilters[0].filter(this.fusedPos.x, nowSec),
+        this.posFilters[1].filter(this.fusedPos.y, nowSec),
+        this.posFilters[2].filter(this.fusedPos.z, nowSec)
+      );
+
+      // Blend display pose gently toward fused pose (if IMU is active, rotation updates 1:1 with gyro)
+      const dispAlpha = this.hasImu ? Math.min(1, dt * 16) : Math.min(1, dt * 10);
+      this.displayPos.lerp(smoothPos, dispAlpha);
+      this.displayQuat.slerp(this.fusedQuat, dispAlpha);
 
       this.boardRoot.visible = true;
-      this.boardRoot.position.copy(this.smoothedPos);
-      this.boardRoot.quaternion.copy(this.smoothedQuat);
+      this.boardRoot.position.copy(this.displayPos);
+      this.boardRoot.quaternion.copy(this.displayQuat);
       this.boardRoot.scale.setScalar(this.boardScale);
 
       const age = performance.now() - this.lastSeenAt;
-      if (!this.locked && age > 1200) {
-        this.onStatus({
-          mode: 'ar',
-          anchored: true,
+      if (!this.locked && age > 2000) {
+        this._emitStatus({
           stale: true,
-          locked: false,
-          message: 'Hold QR code in view to keep tracking',
+          message: this.hasImu
+            ? 'Motion Pan Active — point at QR to re-sync'
+            : 'Hold QR code in view (or tap Lock)',
         });
       }
     }
