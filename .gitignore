@@ -1,0 +1,4 @@
+node_modules/
+certs/
+.wrangler/
+.DS_Store
