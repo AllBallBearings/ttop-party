@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Tabletop AR Game Suite</title>
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <!-- Live Camera Feed + Transparent Three.js WebGL Overlay -->
+  <video id="cameraVideo" autoplay playsinline muted></video>
+  <canvas id="arCanvas"></canvas>
+
+  <!-- Top HUD: Player Health Bars & AR Controls -->
+  <header class="top-hud">
+    <div id="playerHudBar" class="player-hud-bar"></div>
+
+    <div class="ar-toolbar">
+      <div id="arStatusPill" class="ar-pill">
+        <span id="arStatusDot" class="status-dot searching"></span>
+        <span id="arStatusText">Starting camera...</span>
+      </div>
+      <button id="lockBtn" class="pill-btn" type="button" style="display:none;">Lock</button>
+      <button id="modeBtn" class="pill-btn" type="button">Preview</button>
+      <button id="menuBtn" class="pill-btn accent" type="button">Suite</button>
+    </div>
+  </header>
+
+  <!-- Center prompt when waiting for QR Anchor -->
+  <div id="anchorPrompt" class="anchor-prompt hidden">
+    <div class="anchor-reticle"></div>
+    <p>Point camera at the printed <strong>QR Anchor</strong> on the table</p>
+    <a href="./anchor.html" target="_blank" class="anchor-link">Open Printable QR Anchor</a>
+  </div>
+
+  <!-- On-screen Touch Controls (Left: Analog Stick | Right: Jump then Shoot near right edge) -->
+  <div id="touchOverlay" class="touch-overlay hidden">
+    <!-- Left: RC Analog Stick -->
+    <div class="left-controls">
+      <div id="stickZone" class="stick-zone" aria-label="RC Analog Stick">
+        <span class="stick-dir up">▲</span>
+        <span class="stick-dir down">▼</span>
+        <span class="stick-dir left">◀</span>
+        <span class="stick-dir right">▶</span>
+        <div id="stickKnob" class="stick-knob"></div>
+      </div>
+      <div class="control-caption">RC MOVE</div>
+    </div>
+
+    <!-- Right: Jump (left) and Shoot (closest to right edge) -->
+    <div class="right-controls">
+      <button id="jumpBtn" class="action-btn jump-btn" type="button" aria-label="Jump">
+        <span class="btn-icon">⏫</span>
+        <span class="btn-label">JUMP</span>
+      </button>
+      <button id="shootBtn" class="action-btn shoot-btn unarmed" type="button" aria-label="Shoot">
+        <span class="btn-icon">🎯</span>
+        <span class="btn-label">SHOOT</span>
+        <span id="shootBadge" class="btn-sub">GET GUN</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Round Over Banner -->
+  <div id="roundBanner" class="round-banner hidden">
+    <div class="round-card">
+      <h2 id="roundBannerTitle">Winner!</h2>
+      <p id="roundBannerSub"></p>
+      <div id="roundHostActions" class="round-actions hidden">
+        <button id="nextRoundBtn" class="primary-btn" type="button">Next Round</button>
+        <button id="backLobbyBtn" class="secondary-btn" type="button">Game Suite</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Suite Lobby Modal -->
+  <div id="lobbyModal" class="modal-backdrop">
+    <div class="lobby-card">
+      <div class="lobby-header">
+        <div>
+          <h1>Tabletop AR Suite</h1>
+          <div id="roleBadge" class="role-badge">Connecting...</div>
+        </div>
+        <div class="header-actions">
+          <a href="./anchor.html" target="_blank" class="secondary-btn small">Print QR Anchor</a>
+          <button id="joinQrBtn" class="secondary-btn small" type="button">Invite QR</button>
+          <button id="closeLobbyBtn" class="secondary-btn small hidden" type="button">Resume</button>
+        </div>
+      </div>
+
+      <div id="relayBanner" class="relay-banner hidden">
+        <div class="relay-banner-text">
+          <strong>Cloud Relay URL</strong> (needed on GitHub Pages to bypass hotel/corporate Wi-Fi):
+        </div>
+        <div class="relay-row">
+          <input id="relayInput" type="url" placeholder="wss://tabletop-ar-relay.yourname.workers.dev/ws" />
+          <button id="saveRelayBtn" class="secondary-btn small" type="button">Connect</button>
+          <button id="soloModeBtn" class="secondary-btn small" type="button">Play Solo</button>
+        </div>
+      </div>
+
+      <div class="lobby-body">
+        <div class="lobby-col">
+          <div class="section-label">Mini-Game Suite</div>
+          <div id="gameGrid" class="game-grid"></div>
+
+          <div class="scale-row">
+            <label for="scaleSlider">AR Board Scale: <strong id="scaleVal">1.0x</strong></label>
+            <input id="scaleSlider" type="range" min="0.5" max="1.8" step="0.1" value="1.0" />
+          </div>
+        </div>
+
+        <div class="lobby-col">
+          <div class="section-label">Your Name</div>
+          <div class="name-row">
+            <input id="nameInput" type="text" maxlength="14" placeholder="Player name" />
+            <button id="saveNameBtn" class="secondary-btn small" type="button">Set</button>
+          </div>
+
+          <div class="section-label">Players on Wi-Fi</div>
+          <div id="rosterList" class="roster-list"></div>
+
+          <div id="hostControls" class="host-controls hidden">
+            <button id="startGameBtn" class="primary-btn full" type="button">Start Match</button>
+            <div class="bot-row">
+              <button id="addBotBtn" class="secondary-btn small" type="button">+ Add Bot</button>
+              <button id="clearBotsBtn" class="secondary-btn small" type="button">Clear Bots</button>
+            </div>
+          </div>
+          <div id="guestNotice" class="guest-notice">
+            First player on this Wi-Fi is Host. Waiting for Host to start...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Join QR Modal for Friends on Same Wi-Fi -->
+  <div id="joinQrModal" class="modal-backdrop hidden">
+    <div class="qr-invite-card">
+      <h3>Join on Same Wi-Fi</h3>
+      <p>Scan with another phone's camera to join this tabletop room:</p>
+      <div id="joinQrBox" class="join-qr-box"></div>
+      <code id="joinUrlText" class="join-url"></code>
+      <button id="closeJoinQrBtn" class="primary-btn" type="button">Done</button>
+    </div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

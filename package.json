@@ -1,0 +1,27 @@
+{
+  "name": "tabletop-ar-suite",
+  "version": "1.0.0",
+  "description": "QR-anchored AR tabletop multiplayer mobile web mini-game suite",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "keywords": [
+    "ar",
+    "tabletop",
+    "multiplayer",
+    "mobile",
+    "web",
+    "threejs",
+    "qr"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4",
+    "qrcode-generator": "^2.0.4",
+    "three": "^0.183.0",
+    "ws": "^8.19.0"
+  }
+}
