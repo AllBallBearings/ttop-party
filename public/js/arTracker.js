@@ -29,7 +29,7 @@ class LowPassFilter {
  * fast response when moving.
  */
 class OneEuroFilter {
-  constructor({ minCutoff = 0.65, beta = 0.07, dCutoff = 1.0 } = {}) {
+  constructor({ minCutoff = 0.65, beta = 0.08, dCutoff = 1.0 } = {}) {
     this.minCutoff = minCutoff;
     this.beta = beta;
     this.dCutoff = dCutoff;
@@ -64,9 +64,6 @@ class OneEuroFilter {
   }
 }
 
-/**
- * Solves an NxN linear system A * x = b via Gaussian elimination with partial pivoting.
- */
 function solveLinear(A, b) {
   const n = b.length;
   const M = A.map((row, i) => [...row, b[i]]);
@@ -105,10 +102,6 @@ function solveLinear(A, b) {
   return M.map((row) => row[n]);
 }
 
-/**
- * Refines 6DoF (position, quaternion) against normalized 2D corner observations
- * via 4 damped Gauss-Newton iterations to minimize geometric reprojection error.
- */
 function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
   const p = pos.clone();
   const q = quat.clone();
@@ -119,9 +112,7 @@ function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
     for (let i = 0; i < 4; i++) {
       v.set(worldPts[i][0], 0, worldPts[i][1]).applyQuaternion(testQ).add(testP);
       if (v.z >= -0.05) return null;
-      const u = v.x / -v.z;
-      const w = v.y / -v.z;
-      r.push(u - obsUV[i][0], w - obsUV[i][1]);
+      r.push(v.x / -v.z - obsUV[i][0], v.y / -v.z - obsUV[i][1]);
     }
     return r;
   };
@@ -153,7 +144,6 @@ function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
       }
     }
 
-    // Normal equations: (J^T J + lambda * I) * delta = -J^T r0
     const JTJ = Array.from({ length: 6 }, () => new Array(6).fill(0));
     const JTr = new Array(6).fill(0);
     for (let i = 0; i < 6; i++) {
@@ -168,10 +158,7 @@ function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
     }
 
     const delta = solveLinear(JTJ, JTr);
-    if (!delta) break;
-
-    const stepNorm = Math.hypot(...delta);
-    if (stepNorm < 1e-5) break;
+    if (!delta || Math.hypot(...delta) < 1e-5) break;
 
     const nextP = p.clone().add(new THREE.Vector3(delta[0], delta[1], delta[2]));
     euler.set(delta[3], delta[4], delta[5], 'XYZ');
@@ -195,8 +182,79 @@ function refinePoseGaussNewton(pos, quat, worldPts, obsUV, iterations = 4) {
 }
 
 /**
- * Estimates 6DoF board pose (position + quaternion) in Three.js camera space
- * from the 4 detected QR code corners.
+ * Gravity-Aligned 360-degree Tabletop Pose Solver:
+ * Uses the phone's known gravity normal (table is always flat/horizontal!) to intersect
+ * the 4 QR corner rays directly onto the horizontal plane. Eliminates planar tilt ambiguity
+ * and rocking/shifting when walking 360 degrees around the table.
+ */
+function estimateGravityAlignedPose(corners, videoW, videoH, fVideo, imuQuat, markerHalfSize = 1.0) {
+  const cx = videoW * 0.5;
+  const cy = videoH * 0.5;
+
+  // World +Y (table up normal) expressed in camera coordinates
+  const nCam = new THREE.Vector3(0, 1, 0).applyQuaternion(imuQuat.clone().invert()).normalize();
+
+  const imgPts = [
+    corners.topLeftCorner,
+    corners.topRightCorner,
+    corners.bottomRightCorner,
+    corners.bottomLeftCorner,
+  ];
+
+  // Intersect each normalized camera ray with unit-height horizontal plane: nCam . P = -1
+  const unitPts = [];
+  for (let i = 0; i < 4; i++) {
+    const u = (imgPts[i].x - cx) / fVideo;
+    const v = -(imgPts[i].y - cy) / fVideo;
+    const ray = new THREE.Vector3(u, v, -1.0);
+    const denom = nCam.dot(ray);
+    // Ray must point down onto the tabletop surface
+    if (denom > -0.1) return null;
+    unitPts.push(ray.multiplyScalar(-1.0 / denom));
+  }
+
+  const s0 = unitPts[0].distanceTo(unitPts[1]);
+  const s1 = unitPts[1].distanceTo(unitPts[2]);
+  const s2 = unitPts[2].distanceTo(unitPts[3]);
+  const s3 = unitPts[3].distanceTo(unitPts[0]);
+  const avgSide = 0.25 * (s0 + s1 + s2 + s3);
+  if (avgSide < 1e-4) return null;
+
+  const expectedSide = 2.0 * markerHalfSize;
+  const camHeight = expectedSide / avgSide;
+  if (camHeight < 0.25 || camHeight > 45) return null;
+
+  const center = new THREE.Vector3()
+    .add(unitPts[0])
+    .add(unitPts[1])
+    .add(unitPts[2])
+    .add(unitPts[3])
+    .multiplyScalar(0.25 * camHeight);
+
+  if (center.z > -0.2 || center.length() > 60) return null;
+
+  // QR +X axis (left-to-right across the QR's own top/bottom edges) on the flat table plane
+  const xDir = new THREE.Vector3()
+    .subVectors(unitPts[1], unitPts[0])
+    .add(new THREE.Vector3().subVectors(unitPts[2], unitPts[3]));
+
+  // Project strictly orthogonal to nCam
+  xDir.addScaledVector(nCam, -xDir.dot(nCam));
+  if (xDir.lengthSq() < 1e-6) return null;
+  xDir.normalize();
+
+  const yDir = nCam.clone();
+  const zDir = new THREE.Vector3().crossVectors(xDir, yDir).normalize();
+  xDir.crossVectors(yDir, zDir).normalize();
+
+  const rotMatrix = new THREE.Matrix4().makeBasis(xDir, yDir, zDir);
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+
+  return { position: center, quaternion };
+}
+
+/**
+ * Fallback full 6DoF planar PnP solver when IMU/Motion sensors are not yet active.
  */
 function estimatePoseFromCorners(corners, videoW, videoH, fVideo, markerHalfSize = 1.0) {
   const cx = videoW * 0.5;
@@ -281,6 +339,17 @@ function deviceOrientationToQuat(alphaDeg, betaDeg, gammaDeg, screenAngleDeg) {
   return q;
 }
 
+function normalizeAngle(a) {
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+function extractYawFromWorldQuat(q) {
+  const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  return Math.atan2(fwd.x, fwd.z);
+}
+
 export class ARTracker {
   constructor({ videoEl, canvasEl, onStatus }) {
     this.videoEl = videoEl;
@@ -328,7 +397,7 @@ export class ARTracker {
     this.boardRoot.add(dirLight);
     this.boardRoot.add(dirLight.target);
 
-    // Pose state (camera space, fused with IMU gyroscope)
+    // Pose state
     this.hasAnchoredOnce = false;
     this.lastSeenAt = 0;
     this.fusedPos = new THREE.Vector3(0, -1.5, -10);
@@ -336,14 +405,19 @@ export class ARTracker {
     this.displayPos = new THREE.Vector3(0, -1.5, -10);
     this.displayQuat = new THREE.Quaternion();
 
-    // Corner One-Euro filters (8 scalars for 4 corners)
+    // World-space locked table orientation (yaw around gravity +Y)
+    this.hasWorldYaw = false;
+    this.tableWorldYaw = 0;
+    this.pendingJumpPose = null;
+
+    // Corner & position One-Euro filters
     this.cornerFilters = Array.from({ length: 8 }, () =>
-      new OneEuroFilter({ minCutoff: 0.55, beta: 0.06, dCutoff: 1.0 })
+      new OneEuroFilter({ minCutoff: 0.6, beta: 0.08, dCutoff: 1.0 })
     );
     this.posFilters = [
-      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
-      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
-      new OneEuroFilter({ minCutoff: 0.75, beta: 0.35 }),
+      new OneEuroFilter({ minCutoff: 0.85, beta: 0.45 }),
+      new OneEuroFilter({ minCutoff: 0.85, beta: 0.45 }),
+      new OneEuroFilter({ minCutoff: 0.85, beta: 0.45 }),
     ];
 
     // IMU / Gyroscope fusion state
@@ -387,9 +461,9 @@ export class ARTracker {
     const handler = (e) => {
       if (e.alpha === null || e.beta === null || e.gamma === null) return;
       const screenAngle =
-        (window.screen && window.screen.orientation && window.screen.orientation.angle) ||
-        window.orientation ||
-        0;
+        window.screen && window.screen.orientation && window.screen.orientation.angle !== undefined
+          ? window.screen.orientation.angle
+          : window.orientation || 0;
       const q = deviceOrientationToQuat(e.alpha, e.beta, e.gamma, screenAngle);
       this.imuQuat.copy(q);
       this.hasImu = true;
@@ -429,9 +503,9 @@ export class ARTracker {
         this.mode === 'preview'
           ? 'Tabletop Preview Mode'
           : this.locked
-            ? 'Board Locked'
+            ? '360° Board Locked'
             : this.hasAnchoredOnce
-              ? 'QR Anchor Active'
+              ? (this.hasImu ? '360° Gravity + QR Locked' : 'QR Anchor Active')
               : 'Point camera at printed QR code on table'
       ),
       ...extra,
@@ -558,13 +632,21 @@ export class ARTracker {
     this.locked = Boolean(locked);
     this._emitStatus({
       message: this.locked
-        ? (this.hasImu ? 'QR Locked (Motion Pan Active)' : 'Board Position Locked')
-        : 'Live QR + Motion Tracking',
+        ? (this.hasImu ? '360° Board Locked (Motion Active)' : 'Board Position Locked')
+        : 'Live 360° QR + Motion Tracking',
     });
   }
 
   setBoardScale(scale) {
     this.boardScale = Math.max(0.5, Math.min(2.0, Number(scale) || 1.0));
+  }
+
+  _getWorldLockedBoardCamQuat() {
+    const worldBoardQuat = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      this.tableWorldYaw
+    );
+    return this.imuQuat.clone().invert().multiply(worldBoardQuat).normalize();
   }
 
   _onQrResult(result) {
@@ -579,8 +661,7 @@ export class ARTracker {
     const nowSec = nowMs / 1000;
     const timeSinceLast = nowMs - this.lastSeenAt;
 
-    // Reset 2D corner filters if QR was out of view > 350ms so re-acquisition is instant
-    if (timeSinceLast > 350) {
+    if (timeSinceLast > 300) {
       for (const f of this.cornerFilters) f.reset();
     }
 
@@ -607,45 +688,81 @@ export class ARTracker {
     };
 
     const fVideo = 0.82 * Math.max(vw, vh);
-    const pose = estimatePoseFromCorners(scaledCorners, vw, vh, fVideo, 1.0);
+
+    // Use gravity-aligned solver when IMU is active (rock-solid 360° tabletop flatness!)
+    const pose = this.hasImu
+      ? estimateGravityAlignedPose(scaledCorners, vw, vh, fVideo, this.imuQuat, 1.0)
+      : estimatePoseFromCorners(scaledCorners, vw, vh, fVideo, 1.0);
+
     if (!pose) return;
 
     if (!this.hasAnchoredOnce) {
       this.hasAnchoredOnce = true;
+      if (this.hasImu) {
+        const worldQ = this.imuQuat.clone().multiply(pose.quaternion);
+        this.tableWorldYaw = extractYawFromWorldQuat(worldQ);
+        this.hasWorldYaw = true;
+        this.fusedQuat.copy(this._getWorldLockedBoardCamQuat());
+      } else {
+        this.fusedQuat.copy(pose.quaternion);
+      }
       this.fusedPos.copy(pose.position);
-      this.fusedQuat.copy(pose.quaternion);
       this.displayPos.copy(pose.position);
-      this.displayQuat.copy(pose.quaternion);
+      this.displayQuat.copy(this.fusedQuat);
       this.boardRoot.visible = true;
       this.lastSeenAt = nowMs;
       this._emitStatus({
         qrData: result.data,
-        message: this.hasImu ? 'QR + Motion Locked' : 'QR Anchor Locked',
+        message: this.hasImu ? '360° Gravity + QR Locked' : 'QR Anchor Locked',
       });
       return;
     }
 
-    // Outlier guard while actively anchored (ignore sudden single-frame misreads)
+    // 2-frame confirmation guard for sudden big jumps (> 3.0 units) so single bad reads
+    // are ignored without ever blocking legitimate 360° movement around the table
     const jumpDist = pose.position.distanceTo(this.fusedPos);
-    const angleDiff = pose.quaternion.angleTo(this.fusedQuat);
-    if (timeSinceLast < 1600 && (jumpDist > 4.0 || angleDiff > 0.7)) {
-      return;
+    if (timeSinceLast < 1200 && jumpDist > 3.0) {
+      if (
+        this.pendingJumpPose &&
+        nowMs - this.pendingJumpPose.at < 450 &&
+        pose.position.distanceTo(this.pendingJumpPose.position) < 1.2
+      ) {
+        this.pendingJumpPose = null;
+      } else {
+        this.pendingJumpPose = { position: pose.position.clone(), at: nowMs };
+        return;
+      }
+    } else {
+      this.pendingJumpPose = null;
     }
 
     this.lastSeenAt = nowMs;
 
-    // When IMU is active and phone is nearly stationary, trust IMU heavily and damp QR noise
-    const isStill = this.hasImu && this.recentImuSpeed < 0.015;
-    const posBlend = !this.hasImu ? 0.35 : isStill ? 0.08 : 0.22;
-    const rotBlend = !this.hasImu ? 0.35 : isStill ? 0.08 : 0.24;
+    if (this.hasImu) {
+      // Update world-space horizontal yaw smoothly to counteract slow gyro yaw drift
+      const measuredWorldQ = this.imuQuat.clone().multiply(pose.quaternion);
+      const measuredYaw = extractYawFromWorldQuat(measuredWorldQ);
+      if (!this.hasWorldYaw) {
+        this.tableWorldYaw = measuredYaw;
+        this.hasWorldYaw = true;
+      } else {
+        const yawDiff = normalizeAngle(measuredYaw - this.tableWorldYaw);
+        const yawBlend = this.recentImuSpeed < 0.015 ? 0.08 : 0.22;
+        this.tableWorldYaw = normalizeAngle(this.tableWorldYaw + yawDiff * yawBlend);
+      }
 
-    this.fusedPos.lerp(pose.position, posBlend);
-    this.fusedQuat.slerp(pose.quaternion, rotBlend);
+      const posBlend = this.recentImuSpeed < 0.015 ? 0.14 : 0.35;
+      this.fusedPos.lerp(pose.position, posBlend);
+      this.fusedQuat.copy(this._getWorldLockedBoardCamQuat());
+    } else {
+      this.fusedPos.lerp(pose.position, 0.35);
+      this.fusedQuat.slerp(pose.quaternion, 0.35);
+    }
 
     this._emitStatus({
       qrData: result.data,
       stale: false,
-      message: this.hasImu ? 'QR + Motion Locked' : 'QR Anchor Locked',
+      message: this.hasImu ? '360° Gravity + QR Locked' : 'QR Anchor Locked',
     });
   }
 
@@ -701,7 +818,7 @@ export class ARTracker {
       }
     }
 
-    // Apply 60Hz gyroscope delta so panning left/right keeps the board anchored even when QR leaves frame
+    // 60Hz IMU update: keeps board orientation fixed in the room across 360° walk-around & panning
     if (this.hasImu) {
       if (this.hasPrevImu && this.hasAnchoredOnce) {
         const deltaCam = this.imuQuat.clone().invert().multiply(this.prevImuQuat);
@@ -709,9 +826,13 @@ export class ARTracker {
         this.recentImuSpeed = this.recentImuSpeed * 0.7 + stepAngle * 0.3;
 
         this.fusedPos.applyQuaternion(deltaCam);
-        this.fusedQuat.premultiply(deltaCam).normalize();
         this.displayPos.applyQuaternion(deltaCam);
-        this.displayQuat.premultiply(deltaCam).normalize();
+
+        if (this.hasWorldYaw) {
+          this.fusedQuat.copy(this._getWorldLockedBoardCamQuat());
+        } else {
+          this.fusedQuat.premultiply(deltaCam).normalize();
+        }
       }
       this.prevImuQuat.copy(this.imuQuat);
       this.hasPrevImu = true;
@@ -725,10 +846,15 @@ export class ARTracker {
         this.posFilters[2].filter(this.fusedPos.z, nowSec)
       );
 
-      // Blend display pose gently toward fused pose (if IMU is active, rotation updates 1:1 with gyro)
-      const dispAlpha = this.hasImu ? Math.min(1, dt * 16) : Math.min(1, dt * 10);
-      this.displayPos.lerp(smoothPos, dispAlpha);
-      this.displayQuat.slerp(this.fusedQuat, dispAlpha);
+      const posAlpha = this.hasImu ? Math.min(1, dt * 18) : Math.min(1, dt * 12);
+      this.displayPos.lerp(smoothPos, posAlpha);
+
+      if (this.hasImu && this.hasWorldYaw) {
+        // Orientation is directly locked to 60Hz world gravity + tableWorldYaw (zero lag!)
+        this.displayQuat.copy(this.fusedQuat);
+      } else {
+        this.displayQuat.slerp(this.fusedQuat, Math.min(1, dt * 12));
+      }
 
       this.boardRoot.visible = true;
       this.boardRoot.position.copy(this.displayPos);
@@ -740,8 +866,8 @@ export class ARTracker {
         this._emitStatus({
           stale: true,
           message: this.hasImu
-            ? 'Motion Pan Active — point at QR to re-sync'
-            : 'Hold QR code in view (or tap Lock)',
+            ? '360° Motion Active — point at QR to sync position'
+            : 'Enable Motion or hold QR in view',
         });
       }
     }

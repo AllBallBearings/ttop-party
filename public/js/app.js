@@ -66,6 +66,7 @@ const els = {
   shootBtn: document.getElementById('shootBtn'),
   shootBadge: document.getElementById('shootBadge'),
   anchorPrompt: document.getElementById('anchorPrompt'),
+  promptMotionBtn: document.getElementById('promptMotionBtn'),
 };
 
 let ws = null;
@@ -139,6 +140,7 @@ const arTracker = new ARTracker({
     );
     els.modeBtn.textContent = status.mode === 'preview' ? 'AR Cam' : 'Preview';
     els.motionBtn.style.display = status.mode === 'ar' && status.needsMotionPermission ? 'inline-flex' : 'none';
+    els.promptMotionBtn.classList.toggle('hidden', !(status.mode === 'ar' && status.needsMotionPermission));
     els.lockBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
     els.lockBtn.textContent = status.locked ? 'Unlock' : 'Lock';
     els.lockBtn.classList.toggle('active', Boolean(status.locked));
@@ -535,6 +537,11 @@ els.backLobbyBtn.addEventListener('click', () => {
 });
 
 els.motionBtn.addEventListener('click', () => {
+  sound.unlock();
+  arTracker.requestMotionPermission();
+});
+
+els.promptMotionBtn.addEventListener('click', () => {
   sound.unlock();
   arTracker.requestMotionPermission();
 });

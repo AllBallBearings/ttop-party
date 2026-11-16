@@ -197,8 +197,12 @@ html, body {
   font-size: 13px;
 }
 
+.anchor-prompt button,
 .anchor-link {
   pointer-events: auto;
+}
+
+.anchor-link {
   color: #7dd3fc;
   font-size: 12px;
   font-weight: 700;
