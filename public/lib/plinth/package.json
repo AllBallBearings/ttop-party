@@ -1,0 +1,17 @@
+{
+  "name": "plinth-ar",
+  "version": "0.1.0",
+  "description": "Stable markerless and marker-anchored web AR for mobile browsers: SLAM-lite visual-inertial tracking, frame-synchronized rendering, placement and gestures.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./three": "./three/index.js",
+    "./core/*": "./core/*",
+    "./vision/*": "./vision/*"
+  },
+  "peerDependencies": {
+    "three": ">=0.150.0"
+  },
+  "license": "MIT"
+}

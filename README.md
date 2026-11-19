@@ -9,6 +9,15 @@ Designed so the **1st player to open the URL on their Wi-Fi becomes the Host** (
 - **Cloud Relay (`cloudflare-worker/`)** — Lightweight Cloudflare Worker + SQLite-backed Durable Object (`TabletopRoom`). Hashes `CF-Connecting-IP` so everyone on the same Wi-Fi automatically lands in the same room (and supports `?room=...` via Invite QR for friends on 5G). Zero game compute on the server; promotes the next player automatically if the Host leaves.
 - **Local Dev/LAN Server (`server/`)** — Runs the exact same relay protocol locally over HTTPS/WSS (`npm start`) for offline testing on your own machine or LAN.
 
+- **AR Engine (`public/lib/plinth/`)**: **Plinth**, a reusable web AR library modelled on how 8th Wall's engine works. It provides frame-synchronized camera rendering, IMU-seeded visual tracking that keeps the board fixed when the QR leaves view or you walk around the table, automatic metric scale from the printed QR, tap-to-place on the table for solo play, and gestures. See [`public/lib/plinth/README.md`](public/lib/plinth/README.md) and the research notes in [`docs/RESEARCH.md`](public/lib/plinth/docs/RESEARCH.md). Try the standalone demo at `/lib/plinth/examples/place.html`.
+
+### Tests
+```bash
+npm test                  # Plinth unit + tracking-accuracy tests (Node)
+npm run test:ar:browser   # full WebGL/worker pipeline in headless Chromium (needs Playwright)
+npm run bench:ar          # accuracy report on rendered camera trajectories
+```
+
 ---
 
 ## Option A: Deploy to GitHub Pages + Cloudflare Worker (Bypasses Hotel/Corporate Wi-Fi)

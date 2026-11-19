@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Plinth E2E</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    canvas { width: 360px; height: 640px; display: block; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "/node_modules/three/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script type="module">
+    import * as THREE from 'three';
+    import { PlinthThree, createShadowCatcher, createDefaultLighting } from '/public/lib/plinth/three/index.js';
+    import { ManualSource, ImuSource, math as M } from '/public/lib/plinth/index.js';
+    import { captureIntrinsics } from '/public/lib/plinth/core/device-calibration.js';
+    import { projectPoint } from '/public/lib/plinth/vision/geometry.js';
+    import { defaultScene, render } from '/test/plinth/synth.mjs';
+    import { TRAJECTORIES } from '/test/plinth/sequence.mjs';
+
+    const params = new URLSearchParams(location.search);
+    const trajName = params.get('traj') || 'orbit';
+    const nFrames = Number(params.get('frames') || 90);
+    const useWorker = params.get('worker') !== '0';
+    const verbose = params.get('verbose') === '1';
+    const traj = TRAJECTORIES[trajName];
+    const CAP_W = 360, CAP_H = 640;
+    const K = captureIntrinsics(720, 1280).cropAndScale(CAP_W, CAP_H);
+    const scene = defaultScene(1);
+
+    const source = new ManualSource();
+    const imu = new ImuSource();
+    imu.permissionGranted = true;
+    const t0 = traj.pose(0, traj.frames);
+    const ar = window.__ar = new PlinthThree({
+      canvas: document.getElementById('c'),
+      source, imu, useWorker,
+      cameraHeight: t0.t[1],
+      processingLongSide: 480,
+      intrinsics: K,
+      autoResize: false,
+    });
+    ar.resize(360, 640);
+
+    // Content: a cube standing at the table centre (true world origin).
+    const lights = createDefaultLighting();
+    ar.scene.add(lights.group);
+    const qAlign = M.quatFromYaw(-M.yawOfQuat(t0.q));
+    const toTracker = (p) => M.quatRotate(qAlign, [p[0] - t0.t[0], p[1], p[2] - t0.t[2]]);
+    const anchorObj = ar.createAnchor(toTracker([0, 0, 0]));
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), new THREE.MeshStandardMaterial({ color: 0xff3b30 }));
+    cube.position.y = 0.03;
+    cube.castShadow = true;
+    anchorObj.add(cube, createShadowCatcher(0.6));
+
+    const errors = [];
+    const log = [];
+    let gpuMode = null;
+    window.__done = false;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = CAP_W; canvas.height = CAP_H;
+    const ctx = canvas.getContext('2d');
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    async function main() {
+      await ar.start();
+      gpuMode = ar.engine.gpu.asyncReadback ? 'async-pbo' : 'sync';
+      const startTime = performance.now();
+      for (let i = 0; i < nFrames; i++) {
+        const truth = traj.pose(i, traj.frames);
+        const gray = render(scene, truth, K, { noise: 2, seed: i });
+        const rgba = new ImageData(CAP_W, CAP_H);
+        for (let k = 0; k < gray.data.length; k++) {
+          const v = gray.data[k];
+          rgba.data[k * 4] = v; rgba.data[k * 4 + 1] = v; rgba.data[k * 4 + 2] = v; rgba.data[k * 4 + 3] = 255;
+        }
+        ctx.putImageData(rgba, 0, 0);
+        const bitmap = await createImageBitmap(canvas);
+        const tMs = startTime + i * 33.33;
+        // IMU: drifting yaw, sampled at 60 Hz around the frame.
+        for (const dt of [-16.7, 0]) {
+          const drift = (0.6 * (tMs + dt - startTime) / 1000 + 20) * Math.PI / 180;
+          imu.pushSample(tMs + dt, M.quatNormalize(M.quatMul(M.quatFromYaw(drift), truth.q)));
+        }
+        source.push(bitmap, CAP_W, CAP_H, tMs);
+        // Lock-step: pump the pipeline until this frame is displayed.
+        let fs = null;
+        for (let spin = 0; spin < 400; spin++) {
+          ar.update(performance.now());
+          fs = ar.engine.frameState;
+          if (fs && fs.frameId === i + 1) break;
+          await sleep(2);
+        }
+        if (!fs || fs.frameId !== i + 1) { log.push(`frame ${i}: not displayed`); continue; }
+        // Anchor reprojection error (true vs. estimated), in pixels of the 640 px view.
+        const pt = projectPoint(truth, K, [0, 0, 0]);
+        const pe = projectPoint(fs.pose, K, toTracker([0, 0, 0]));
+        if (pt && pe) errors.push(Math.hypot(pt[0] - pe[0], pt[1] - pe[1]));
+        if (verbose || i % 15 === 0) {
+          const lr = ar.engine.lastResult;
+          log.push(`#${i} ${fs.status}/${fs.reason} tracked=${lr.tracked} inl=${lr.inliers} map=${lr.mapSize} tracker=${fs.trackerMs?.toFixed(1)}ms err=${errors.at(-1)?.toFixed(2)}px imu=${!!ar.engine.frames.size} t=${(fs.time - startTime).toFixed(1)}`);
+        }
+        bitmap.close?.();
+      }
+      const sorted = [...errors].sort((a, b) => a - b);
+      window.__result = {
+        gpuMode,
+        worker: useWorker,
+        frames: nFrames,
+        measured: errors.length,
+        p50: sorted[Math.floor(sorted.length * 0.5)],
+        p95: sorted[Math.floor(sorted.length * 0.95)],
+        max: sorted.at(-1),
+        status: ar.engine.trackingStatus,
+        log,
+      };
+      window.__done = true;
+    }
+    main().catch((err) => { window.__result = { error: String(err && err.stack || err) }; window.__done = true; });
+  </script>
+</body>
+</html>

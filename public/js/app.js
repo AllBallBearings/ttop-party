@@ -150,6 +150,9 @@ const arTracker = new ARTracker({
   },
 });
 
+// Inspection hook for automated tests and on-device debugging (?debug).
+if (new URLSearchParams(location.search).has('debug')) window.__tabletop = { arTracker };
+
 new TouchControls({
   stickZoneEl: els.stickZone,
   stickKnobEl: els.stickKnob,
