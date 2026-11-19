@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>GPU mapping</title></head>
+<body><canvas id="c" width="4" height="4"></canvas>
+<script type="module">
+  import { GpuFrameProcessor } from '/public/lib/plinth/core/gpu.js';
+  import { Intrinsics } from '/public/lib/plinth/core/camera-model.js';
+  const gl = document.getElementById('c').getContext('webgl2');
+  const capW = 360, capH = 640, pw = 268, ph = 480;
+  // Ramp images: R encodes x, G encodes y (in capture pixels, scaled to 0..255).
+  const cv = new OffscreenCanvas(capW, capH);
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(capW, capH);
+  for (let y = 0; y < capH; y++) for (let x = 0; x < capW; x++) {
+    const i = (y * capW + x) * 4;
+    img.data[i] = Math.round((x / (capW - 1)) * 255);
+    img.data[i + 1] = img.data[i]; img.data[i + 2] = img.data[i]; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const results = {};
+  for (const mode of ['async', 'sync']) {
+    const gpu = new GpuFrameProcessor(gl, { asyncReadback: mode === 'async' });
+    gpu.configure(pw, ph);
+    const slot = gpu.acquireSlot();
+    gpu.upload(slot, cv, capW, capH);
+    gpu.process(slot, 1);
+    let out = [];
+    for (let t = 0; t < 200 && !out.length; t++) { out = gpu.poll(); if (!out.length) await new Promise((r) => setTimeout(r, 5)); }
+    const data = out[0].data;
+    // Expected capture x for processing column i (pixel-centre convention).
+    const cap = new Intrinsics({ width: capW, height: capH, fx: 500, fy: 500, cx: (capW - 1) / 2, cy: (capH - 1) / 2 });
+    const proc = cap.cropAndScale(pw, ph);
+    const s = proc.fx / cap.fx;
+    let maxErr = 0; let sumErr = 0; let n = 0;
+    for (const j of [10, 240, 470]) for (let i = 4; i < pw - 4; i++) {
+      const expectedX = (i - proc.cx) / s + cap.cx;
+      const gotX = (data[j * pw + i] / 255) * (capW - 1);
+      const e = gotX - expectedX;
+      maxErr = Math.max(maxErr, Math.abs(e)); sumErr += e; n++;
+    }
+    results[mode] = { asyncUsed: gpu.asyncReadback, meanErrCapturePx: sumErr / n, maxErrCapturePx: maxErr };
+  }
+  window.__result = results; window.__done = true;
+</script></body></html>
