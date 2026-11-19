@@ -14,7 +14,7 @@
 //   * The anchor is filtered; when the marker leaves the view the anchor
 //     simply stays where it is in the tracked world.
 
-import { quatFromYaw, normalizeAngle, sub3, add3, scale3, dot3, norm3 } from '../core/math.js';
+import { quatFromYaw, normalizeAngle, sub3, add3, scale3, norm3 } from '../core/math.js';
 import { pixelRay, projectPoint } from '../vision/geometry.js';
 
 /**
@@ -291,5 +291,3 @@ export class MarkerAnchor {
     engine.emit(found || !wasTracking ? 'markerfound' : 'markerupdated', { anchor: this.anchor, data: m.data, size: m.size });
   }
 }
-
-export { dot3 };

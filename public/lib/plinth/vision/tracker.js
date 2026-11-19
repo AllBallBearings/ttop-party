@@ -19,8 +19,7 @@
 
 import {
   quatMul, quatConj, quatNormalize, quatRotate, quatFromYaw, yawOfQuat, quatSlerp,
-  quatFromAxisAngle, quatAngle, sub3, add3, scale3, dot3, norm3, normalize3, dist3, median,
-  normalizeAngle,
+  quatFromAxisAngle, quatAngle, sub3, add3, scale3, dot3, norm3, dist3, median, normalizeAngle,
 } from '../core/math.js';
 import { buildPyramid, blur5, exposureStats } from './image.js';
 import { detectFast } from './fast.js';
@@ -816,5 +815,3 @@ export class Tracker {
 function now() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
 }
-
-export { normalize3, dot3 };

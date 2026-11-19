@@ -3,8 +3,7 @@
 
 import {
   quatRotate, quatConj, quatMul, quatNormalize, quatFromRotVec, quatToRotVec, quatToMat3,
-  quatFromYaw, yawOfQuat, sub3, add3, scale3, dot3, cross3, norm3, normalize3, solveSPD, solveLinear,
-  mulberry32,
+  quatFromYaw, yawOfQuat, sub3, dot3, cross3, normalize3, solveSPD, solveLinear, mulberry32,
 } from '../core/math.js';
 
 /**
@@ -436,5 +435,3 @@ export function ransacAbsolutePoseGravity(tiltQ, K, obs, opts = {}) {
   if (count < minInliers) return null;
   return { pose: refined, inliers, count };
 }
-
-export { add3, sub3, scale3, cross3, norm3 };

@@ -14,10 +14,9 @@
 // onUpdate / onRender callbacks. The three.js adapter is such a module.
 
 import {
-  quatMul, quatConj, quatNormalize, quatRotate, quatAngle, quatFromYaw, yawOfQuat,
-  add3, sub3, scale3, dot3, normalize3,
+  quatMul, quatConj, quatNormalize, quatRotate, quatAngle, quatFromYaw, add3, sub3, scale3, dot3,
+  normalize3,
 } from './math.js';
-import { Intrinsics } from './camera-model.js';
 import { detectDevice, referenceFocal, captureIntrinsics } from './device-calibration.js';
 import { ImuSource } from './imu.js';
 import { CameraSource } from './camera-source.js';
@@ -647,5 +646,3 @@ export function detectHorizontalPlanes(points, cameraHeight = 1, minPoints = 12)
   }
   return planes.sort((a, b) => b.count - a.count);
 }
-
-export { Intrinsics, yawOfQuat };
