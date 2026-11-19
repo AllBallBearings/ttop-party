@@ -7,6 +7,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Tabletop AR Game Suite</title>
   <link rel="stylesheet" href="./css/styles.css" />
+  <!-- Bare "three" imports (used by the Plinth AR library) resolve to the vendored build. -->
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js" } }
+  </script>
 </head>
 <body>
   <!-- Live Camera Feed + Transparent Three.js WebGL Overlay -->
@@ -32,7 +36,7 @@
   <!-- Center prompt when waiting for QR Anchor -->
   <div id="anchorPrompt" class="anchor-prompt hidden">
     <div class="anchor-reticle"></div>
-    <p>Point camera at the printed <strong>QR Anchor</strong> on the table</p>
+    <p>Point camera at the printed <strong>QR Anchor</strong> on the table<br />or <strong>tap the table</strong> to place the board (solo)</p>
     <button id="promptMotionBtn" class="primary-btn hidden" type="button">Tap to Enable 360° Motion</button>
     <a href="./anchor.html" target="_blank" class="anchor-link">Open Printable QR Anchor</a>
   </div>

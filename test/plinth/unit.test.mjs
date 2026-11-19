@@ -263,3 +263,14 @@ test('plane homography matches point projection', async () => {
     close((H[3] * x + H[4] * z + H[5]) / w, pr[1], 1e-9);
   }
 });
+
+test('tracker yaw error is well defined when looking straight down', async () => {
+  const { Tracker } = await import('../../public/lib/plinth/vision/tracker.js');
+  const tr = new Tracker(Intrinsics.fromFocal(120, 160, 140));
+  tr.yawOffset = 0;
+  const down = M.quatFromAxisAngle([1, 0, 0], -Math.PI / 2); // looking straight down
+  for (const yaw of [0.3, -1.2, 2.5]) {
+    const q = M.quatMul(M.quatFromYaw(yaw), down);
+    close(tr._yawError(q, down), yaw, 1e-9);
+  }
+});

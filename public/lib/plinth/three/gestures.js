@@ -121,6 +121,9 @@ const easeOutQuad = (t) => 1 - (1 - t) * (1 - t);
  *            hitTypes, onChange(object)
  */
 export class ObjectManipulator {
+  /** The manipulator that receives two-finger gestures (last touched/placed). */
+  static selected = null;
+
   constructor(ar, object, options = {}) {
     this.ar = ar;
     this.object = object;
@@ -149,11 +152,19 @@ export class ObjectManipulator {
     });
     this._tick = (dt) => this.update(dt);
     ar.addTicker?.(this._tick);
+    if (options.select !== false) this.select();
+  }
+
+  /** Make this object the target of pinch / twist gestures. */
+  select() {
+    ObjectManipulator.selected = this;
+    this.o.onSelect?.(this.object);
   }
 
   dispose() {
     this.detector.dispose();
     this.ar.removeTicker?.(this._tick);
+    if (ObjectManipulator.selected === this) ObjectManipulator.selected = null;
   }
 
   _touchesObject(x, y) {
@@ -169,7 +180,14 @@ export class ObjectManipulator {
   _start(s) {
     if (!this.enabled) return;
     clearTimeout(this.holdTimer);
-    this.active = !this.o.requireTouchOnObject || this._touchesObject(s.center.x, s.center.y) || s.count >= 2;
+    if (s.count >= 2) {
+      // Two-finger gestures go to the selected object only (touch an object
+      // or place one to select it), so several objects never scale at once.
+      this.active = ObjectManipulator.selected === this;
+    } else {
+      this.active = !this.o.requireTouchOnObject || this._touchesObject(s.center.x, s.center.y);
+      if (this.active) this.select();
+    }
     if (!this.active) return;
     if (s.count === 1) {
       this.holdTimer = setTimeout(() => this._beginDrag(s.center), this.o.dragDelay);

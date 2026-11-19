@@ -20,6 +20,7 @@
 import {
   quatMul, quatConj, quatNormalize, quatRotate, quatFromYaw, yawOfQuat, quatSlerp,
   quatFromAxisAngle, quatAngle, sub3, add3, scale3, dot3, norm3, normalize3, dist3, median,
+  normalizeAngle,
 } from '../core/math.js';
 import { buildPyramid, blur5, exposureStats } from './image.js';
 import { detectFast } from './fast.js';
@@ -140,6 +141,7 @@ export class Tracker {
     this.badFrames = 0;
     this.lost = false;
     this.yawOffset = 0;
+    this.yawCalibrated = false;
     this.rectSpacing = 0;
     this.status = TrackingStatus.LIMITED;
     this.reason = TrackingReason.INITIALIZING;
@@ -174,6 +176,16 @@ export class Tracker {
     if (this.lastKeyframePose) this.lastKeyframePose = fp(this.lastKeyframePose);
     this.velocity = quatRotate(q, this.velocity);
     this.yawOffset += yaw;
+  }
+
+  /**
+   * Heading difference between a world orientation and the IMU orientation
+   * (in the current world frame). Uses the yaw of q * imuWorld^-1, which stays
+   * well defined when the camera looks straight down.
+   */
+  _yawError(q, imuQ) {
+    const d = quatMul(q, quatConj(this.imuWorldQ(imuQ)));
+    return normalizeAngle(2 * Math.atan2(d[1], d[3]));
   }
 
   /** IMU orientation expressed in the tracker's world frame. */
@@ -224,6 +236,13 @@ export class Tracker {
         inlierCount = this._track(pyr, predPose, imuQ, dt);
         keyframe = this._maybeKeyframe(pyr, imuQ);
       }
+      // Keep the IMU heading aligned with the visual world: the browser's yaw
+      // drifts, and motion permission may only be granted after start-up.
+      if (imuQ && this.status === TrackingStatus.NORMAL) {
+        const err = this._yawError(this.pose.q, imuQ);
+        this.yawOffset += this.yawCalibrated ? 0.05 * err : err;
+        this.yawCalibrated = true;
+      }
       if (continuous && !this.lost) {
         const qa = this.pose.q;
         this.angVel = quatNormalize(quatMul(quatConj(prevPose.q), qa));
@@ -269,12 +288,15 @@ export class Tracker {
       t = this.continuePose.t.slice();
       if (imuQ) {
         // Keep the heading of the previous pose, take tilt from the IMU.
-        this.yawOffset = yawOfQuat(q) - yawOfQuat(imuQ);
+        this.yawOffset = 0;
+        this.yawOffset = this._yawError(q, imuQ);
+        this.yawCalibrated = true;
         q = this.imuWorldQ(imuQ);
       }
     } else {
       if (imuQ) {
         this.yawOffset = -yawOfQuat(imuQ);
+        this.yawCalibrated = true;
         q = this.imuWorldQ(imuQ);
       } else {
         q = quatFromAxisAngle([1, 0, 0], cfg.noImuPitch);
@@ -681,7 +703,9 @@ export class Tracker {
     const probePose = { q: tilt, t: [0, Math.max(1e-3, this.pose.t[1]), 0] };
     const cornerRect = this._cornerRectDescs(corners, blurred, probePose);
     const rectPts = candidates.filter((p) => p.rdesc);
-    const orbPts = candidates.filter((p) => !p.rdesc && p.desc);
+    // Oriented BRIEF is heading-independent, so it also covers plane points
+    // when the heading prior is wrong (no IMU, or a large yaw jump).
+    const orbPts = candidates.filter((p) => p.desc);
     const obs = [];
     const matched = [];
     for (let ci = 0; ci < corners.length; ci++) {

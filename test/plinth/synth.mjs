@@ -85,6 +85,24 @@ export function defaultScene(seed = 1) {
   };
 }
 
+/**
+ * Printed QR code lying on the table: {matrix: boolean[][], size (m between
+ * the code's outer corners), center: [x, z], quiet: modules of white margin}.
+ * Rows run along +z (top row at -z), columns along +x. Returns -1 outside.
+ */
+function sampleQr(qr, x, z) {
+  const n = qr.matrix.length;
+  const m = qr.size / n;
+  const half = qr.size / 2 + (qr.quiet ?? 2) * m;
+  const lx = x - qr.center[0];
+  const lz = z - qr.center[1];
+  if (Math.abs(lx) > half || Math.abs(lz) > half) return -1;
+  const c = Math.floor((lx + qr.size / 2) / m);
+  const r = Math.floor((lz + qr.size / 2) / m);
+  if (r < 0 || c < 0 || r >= n || c >= n) return 235;
+  return qr.matrix[r][c] ? 25 : 235;
+}
+
 function intersectBox(o, d, b) {
   let tmin = -Infinity;
   let tmax = Infinity;
@@ -131,6 +149,8 @@ export function traceRay(scene, o, d) {
       if (x >= tb.minX && x <= tb.maxX && z >= tb.minZ && z <= tb.maxZ) {
         bestT = t;
         value = sampleTex(scene.tableTex, x * scene.tableTexScale, z * scene.tableTexScale);
+        const qv = scene.qr ? sampleQr(scene.qr, x, z) : -1;
+        if (qv >= 0) value = qv;
       }
     }
   }

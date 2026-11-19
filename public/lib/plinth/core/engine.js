@@ -35,7 +35,7 @@ const DEFAULTS = {
   processingLongSide: 480,
   syncMode: 'frame',
   useWorker: true,
-  camera: {},
+  capture: {},
   imu: true,
   tracker: {},
   focal480: null,
@@ -173,7 +173,7 @@ export class PlinthEngine {
       const device = await detectDevice();
       this.device = device;
       this.focal480 = this.opts.focal480 || referenceFocal(device);
-      this.source = this.opts.source || new CameraSource(this.opts.camera);
+      this.source = this.opts.source || new CameraSource(this.opts.capture);
       await this.source.start();
       this.emit('camerastatuschange', { status: 'hasVideo', width: this.source.width, height: this.source.height });
     } catch (err) {
@@ -408,7 +408,7 @@ export class PlinthEngine {
     const prev = this.lastResult;
     this.lastResult = { ...r, time: meta.time };
     if (r.pose) {
-      this.poseHistory.set(r.id, { q: r.pose.q, t: r.pose.t, time: meta.time });
+      this.poseHistory.set(r.id, { q: r.pose.q, t: r.pose.t, time: meta.time, status: r.status });
       if (this.poseHistory.size > 90) this.poseHistory.delete(this.poseHistory.keys().next().value);
       if (prev?.pose && this.imu?.available && r.status === 'NORMAL' && prev.status === 'NORMAL') {
         this.timeOffset.add({ q: prev.pose.q, time: prev.time }, { q: r.pose.q, time: meta.time }, this.imu);
@@ -494,7 +494,7 @@ export class PlinthEngine {
       a.position = p.t;
       a.rotation = p.q;
     }
-    for (const [id, p] of this.poseHistory) this.poseHistory.set(id, { ...f(p), time: p.time });
+    for (const [id, p] of this.poseHistory) this.poseHistory.set(id, { ...f(p), time: p.time, status: p.status });
     if (this.lastResult?.pose) this.lastResult.pose = f(this.lastResult.pose);
     this.points = this._pointsToCurrentWorld(this.points, v);
     this.planes = detectHorizontalPlanes(this.points, this.opts.cameraHeight * (tr.scale || 1));

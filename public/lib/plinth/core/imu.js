@@ -96,7 +96,10 @@ export class ImuSource {
   start() {
     if (this.running) return;
     this.running = true;
-    if (this.permissionGranted) this._attach();
+    // Listen right away: browsers that expose requestPermission() but do not
+    // require it (e.g. desktop Chrome) deliver events anyway, and receiving
+    // one proves access. iOS simply sends nothing until permission is granted.
+    this._attach();
   }
 
   stop() {
@@ -126,6 +129,7 @@ export class ImuSource {
 
   _onOrientation(e) {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
+    this.permissionGranted = true;
     this.pushSample(eventTime(e), deviceOrientationToQuat(e.alpha, e.beta, e.gamma, screenAngleDeg()));
   }
 

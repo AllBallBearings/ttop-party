@@ -107,6 +107,7 @@ export class MarkerAnchor {
     this.lastMeasurement = null;
     this.canvas = null;
     this.ctx = null;
+    this.frozen = false; // when true, sightings no longer move the anchor
   }
 
   onAttach({ engine }) {
@@ -176,6 +177,8 @@ export class MarkerAnchor {
     const pose = engine.getPose(frameId);
     const K = engine.captureK?.cropAndScale(det.scanW, det.scanH);
     if (!pose || !K) return null;
+    // Only fuse sightings from frames whose camera pose is trustworthy.
+    if (pose.status && pose.status !== 'NORMAL') return null;
     const rays = det.corners.map((c) => pixelRay(pose, K, c.x, c.y));
     if (rays.some((d) => d[1] > -0.05)) return null; // must look down at the marker
 
@@ -253,6 +256,17 @@ export class MarkerAnchor {
     }
 
     const found = !this.anchor;
+    if (this.frozen && !found) {
+      // Locked by the app: keep the anchor exactly where it is.
+      this.lastSeen = performance.now();
+      if (this.state !== 'tracking') {
+        this.state = 'tracking';
+        engine.emit('markerfound', { anchor: this.anchor, data: m.data, size: m.size });
+      } else {
+        engine.emit('markerupdated', { anchor: this.anchor, data: m.data, size: m.size });
+      }
+      return;
+    }
     if (found) {
       this.anchor = engine.createAnchor(m.center, quatFromYaw(m.yaw), { marker: m.data });
     } else {

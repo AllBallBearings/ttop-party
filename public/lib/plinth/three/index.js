@@ -121,6 +121,7 @@ export class PlinthThree {
     this.enabled = true;
     this.tickers = new Set();
     this._lastTick = 0;
+    this.featurePoints = null;
 
     const gl = this.renderer.getContext();
     this.engine = new PlinthEngine({
@@ -136,6 +137,23 @@ export class PlinthThree {
       window.addEventListener('orientationchange', this._onResize);
     }
     this.resize();
+  }
+
+  /** Show the tracker's map points (debugging aid). */
+  setShowFeaturePoints(on) {
+    if (on && !this.featurePoints) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+      this.featurePoints = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x22d3ee, size: 4, sizeAttenuation: false, depthTest: false }));
+      this.featurePoints.renderOrder = 1000;
+      this.featurePoints.frustumCulled = false;
+      this.scene.add(this.featurePoints);
+      this._pointsVersion = null;
+    } else if (!on && this.featurePoints) {
+      this.featurePoints.removeFromParent();
+      this.featurePoints.geometry.dispose();
+      this.featurePoints = null;
+    }
   }
 
   /** Register fn(dt, frameState) to run every frame after the camera pose is updated. */
@@ -222,6 +240,17 @@ export class PlinthThree {
     const dt = this._lastTick ? Math.min(0.1, (now - this._lastTick) / 1000) : 1 / 60;
     this._lastTick = now;
     for (const fn of this.tickers) fn(dt, fs);
+    if (this.featurePoints && this._pointsVersion !== this.engine.points) {
+      const src = this.engine.points;
+      const n = src.length / 4;
+      const pos = new Float32Array(Math.max(1, n) * 3);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = src[i * 4]; pos[i * 3 + 1] = src[i * 4 + 1]; pos[i * 3 + 2] = src[i * 4 + 2];
+      }
+      this.featurePoints.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.featurePoints.geometry.setDrawRange(0, n);
+      this._pointsVersion = src;
+    }
     if (this.lightEstimation && fs.exposure) {
       // Map mean camera luminance to a gentle light multiplier so content
       // dims in dark rooms and brightens outdoors.
