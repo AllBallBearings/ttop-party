@@ -124,7 +124,7 @@ Properties: `engine`, `scene`, `camera`, `renderer`, `lightScale`.
 * `createAnchor / removeAnchor / anchors`: world-fixed anchors, kept consistent
   when the world is rescaled.
 * `rescaleWorld(scale, center)`, `transformWorld(yaw, t)`, `resetTracking({continuePose, cameraHeight})`, `recenter()`.
-* `addPipelineModule({onAttach, onStart, onCameraFrame, onUpdate, onRender, onDetach})`:
+* `addPipelineModule({onAttach, onStart, onCameraFrame, onUpdate, onRender, onStop, onDetach})`:
   the same idea as 8th Wall's camera pipeline modules.
 
 ### `MarkerAnchor` (shared, metric anchor)

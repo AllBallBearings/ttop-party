@@ -2,7 +2,7 @@
  * Stickman Showdown - Authoritative Game Engine (runs in Host's browser)
  *
  * Players drop onto a glowing flat tabletop arena, a gun drops near each player,
- * and they battle with RC-style movement, jumping, and shooting until one remains.
+ * and they battle with camera-relative movement, jumping, and shooting until one remains.
  */
 
 export const ARENA_WIDTH = 12;
@@ -19,6 +19,9 @@ const PLAYER_HEIGHT = 1.05;
 const MOVE_SPEED = 3.9;
 const REVERSE_SPEED = 2.6;
 const TURN_SPEED = 3.4;
+// Direct (camera-relative) steering: how fast a character swings to face
+// the stick direction.
+const FACE_TURN_SPEED = 14.0;
 const JUMP_VELOCITY = 6.9;
 const GRAVITY = 19.5;
 const BULLET_SPEED = 14.0;
@@ -170,7 +173,7 @@ export class StickmanShowdownEngine {
         animPhase: 0,
         grounded: false,
         kills: 0,
-        input: { throttle: 0, turn: 0, shoot: false, jump: false },
+        input: { throttle: 0, turn: 0, moveX: 0, moveZ: 0, shoot: false, jump: false },
         botState: { strafeDir: idx % 2 === 0 ? 1 : -1, decisionTimer: 0.4 },
       });
 
@@ -220,7 +223,7 @@ export class StickmanShowdownEngine {
       animPhase: 0,
       grounded: false,
       kills: 0,
-      input: { throttle: 0, turn: 0, shoot: false, jump: false },
+      input: { throttle: 0, turn: 0, moveX: 0, moveZ: 0, shoot: false, jump: false },
       botState: { strafeDir: 1, decisionTimer: 0.5 },
     });
 
@@ -251,6 +254,14 @@ export class StickmanShowdownEngine {
     if (!p || !p.alive) return;
     p.input.throttle = clamp(Number(input.throttle) || 0, -1, 1);
     p.input.turn = clamp(Number(input.turn) || 0, -1, 1);
+    // Board-space move direction (camera-relative stick, already rotated by
+    // the player's phone). Length is the stick deflection, capped at 1.
+    let mx = Number(input.moveX) || 0;
+    let mz = Number(input.moveZ) || 0;
+    const len = Math.hypot(mx, mz);
+    if (len > 1) { mx /= len; mz /= len; }
+    p.input.moveX = mx;
+    p.input.moveZ = mz;
     p.input.shoot = Boolean(input.shoot);
     p.input.jump = Boolean(input.jump);
   }
@@ -404,16 +415,28 @@ export class StickmanShowdownEngine {
         this._updateBotInput(p, dt);
       }
 
-      p.yaw = normalizeAngle(p.yaw - p.input.turn * TURN_SPEED * dt);
-
+      const moveMag = Math.hypot(p.input.moveX || 0, p.input.moveZ || 0);
+      if (moveMag > 0.001) {
+        // Direct steering: run where the stick points, turning to face it.
+        const desiredYaw = Math.atan2(p.input.moveX, p.input.moveZ);
+        const diff = normalizeAngle(desiredYaw - p.yaw);
+        const step = FACE_TURN_SPEED * dt;
+        p.yaw = normalizeAngle(p.yaw + clamp(diff, -step, step));
+        p.vx = (p.input.moveX / moveMag) * Math.min(1, moveMag) * MOVE_SPEED;
+        p.vz = (p.input.moveZ / moveMag) * Math.min(1, moveMag) * MOVE_SPEED;
+      } else {
+        // RC steering (bots): turn, then drive forward/back.
+        p.yaw = normalizeAngle(p.yaw - p.input.turn * TURN_SPEED * dt);
+        const drive = p.input.throttle >= 0
+          ? p.input.throttle * MOVE_SPEED
+          : p.input.throttle * REVERSE_SPEED;
+        p.vx = Math.sin(p.yaw) * drive;
+        p.vz = Math.cos(p.yaw) * drive;
+      }
+      // Facing (used for shooting) and ground speed (run animation).
       const fwdX = Math.sin(p.yaw);
       const fwdZ = Math.cos(p.yaw);
-      const moveSpeed = p.input.throttle >= 0
-        ? p.input.throttle * MOVE_SPEED
-        : p.input.throttle * REVERSE_SPEED;
-
-      p.vx = fwdX * moveSpeed;
-      p.vz = fwdZ * moveSpeed;
+      const moveSpeed = Math.hypot(p.vx, p.vz);
       p.x = clamp(p.x + p.vx * dt, -HALF_W + PLAYER_RADIUS, HALF_W - PLAYER_RADIUS);
       p.z = clamp(p.z + p.vz * dt, -HALF_D + PLAYER_RADIUS, HALF_D - PLAYER_RADIUS);
 
@@ -469,8 +492,8 @@ export class StickmanShowdownEngine {
         }
       }
 
-      if (Math.abs(moveSpeed) > 0.15 && p.grounded) {
-        p.animPhase += dt * (Math.abs(moveSpeed) * 3.1);
+      if (moveSpeed > 0.15 && p.grounded) {
+        p.animPhase += dt * (moveSpeed * 3.1);
       }
 
       for (let i = this.guns.length - 1; i >= 0; i--) {

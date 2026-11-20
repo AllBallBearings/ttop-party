@@ -5,7 +5,7 @@ Designed so the **1st player to open the URL on their Wi-Fi becomes the Host** (
 
 ## Architecture
 - **Frontend (`public/`)** — Static HTML/CSS/JS ready for **GitHub Pages** (auto-deployed via `.github/workflows/pages.yml` on push to `main`). Includes vendored Three.js, `jsQR`, and browser QR generator (`public/vendor/`).
-- **Host Game Engine (`public/js/shared/`, `public/js/hostController.js`)** — Runs inside the 1st player's phone browser (`StickmanShowdownEngine`), handling drop-in, gun drops & pickup, RC controls, jump dodging, shooting, and win tracking.
+- **Host Game Engine (`public/js/shared/`, `public/js/hostController.js`)** — Runs inside the 1st player's phone browser (`StickmanShowdownEngine`), handling drop-in, gun drops & pickup, camera-relative movement (stick "up" = away from you, wherever you stand), jump dodging, shooting, and win tracking.
 - **Cloud Relay (`cloudflare-worker/`)** — Lightweight Cloudflare Worker + SQLite-backed Durable Object (`TabletopRoom`). Hashes `CF-Connecting-IP` so everyone on the same Wi-Fi automatically lands in the same room (and supports `?room=...` via Invite QR for friends on 5G). Zero game compute on the server; promotes the next player automatically if the Host leaves.
 - **Local Dev/LAN Server (`server/`)** — Runs the exact same relay protocol locally over HTTPS/WSS (`npm start`) for offline testing on your own machine or LAN.
 

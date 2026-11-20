@@ -122,6 +122,19 @@ export class MarkerAnchor {
     engine.on('result', this._onResult);
   }
 
+  /** Engine stopped: the next start is a new world, so start over. */
+  onStop() {
+    this.session = (this.session || 0) + 1; // drop detections still in flight
+    this.anchor = null;
+    this.state = 'searching';
+    this.lastSeen = 0;
+    this.busy = false;
+    this.pending.clear();
+    this.scaleVotes = [];
+    this.calibrated = !this.o.autoScale;
+    this.lastMeasurement = null;
+  }
+
   onDetach({ engine }) {
     engine.off('result', this._onResult);
     this.o.detector?.dispose?.();
@@ -150,7 +163,9 @@ export class MarkerAnchor {
     const frameId = frame.id;
     const capW = frame.width;
     const capH = frame.height;
+    const session = this.session;
     this.o.detector.detect({ data: img.data, width: w, height: h }).then((res) => {
+      if (session !== this.session) return;
       this.busy = false;
       if (!res || !res.corners) return;
       if (this.o.match && !(typeof this.o.match === 'string' ? res.data === this.o.match : this.o.match.test(res.data))) return;
@@ -161,7 +176,7 @@ export class MarkerAnchor {
         this.pending.set(frameId, det);
         if (this.pending.size > 8) this.pending.delete(this.pending.keys().next().value);
       }
-    }).catch(() => { this.busy = false; });
+    }).catch(() => { if (session === this.session) this.busy = false; });
   }
 
   onUpdate() {
