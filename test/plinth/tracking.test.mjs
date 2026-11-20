@@ -34,3 +34,13 @@ test('blackout: relocalises after the camera is covered and moved', { timeout: 2
   const s = r.summarize(after);
   assert.ok(s.p95 < 3, `post-relocalisation anchor p95 ${s.p95.toFixed(2)}px`);
 });
+
+test('dolly: leaning in to half the distance and back (board must grow and shrink)', { timeout: 240000 }, () => {
+  const r = runSequence('dolly');
+  assert.ok(/^N+$/.test(r.statusTimeline), r.statusTimeline);
+  assert.ok(r.pos.p95 < 0.02, `position p95 ${(r.pos.p95 * 100).toFixed(1)}cm`);
+  assert.ok(r.anchor.p95 < 2, `anchor p95 ${r.anchor.p95.toFixed(2)}px`);
+  // The start height is unknown on a phone; a wrong guess must not break it.
+  const wrong = runSequence('dolly', { heightScale: 3 });
+  assert.ok(wrong.anchor.p95 < 2, `anchor p95 with wrong start height ${wrong.anchor.p95.toFixed(2)}px`);
+});
