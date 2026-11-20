@@ -11,6 +11,16 @@ import {
 } from './config.js';
 import { qrcode } from '../vendor/qrcode/qrcode.mjs';
 import { sound } from './audio.js';
+import {
+  installZoomGuard,
+  isFullscreenSupported,
+  isFullscreen,
+  enterFullscreen,
+  exitFullscreen,
+  onFullscreenChange,
+  isStandaloneApp,
+  isIOS,
+} from './viewportGuard.js';
 
 const TOKEN_KEY = 'tabletop_ar_player_token';
 const NAME_KEY = 'tabletop_ar_player_name';
@@ -25,6 +35,9 @@ const els = {
   lockBtn: document.getElementById('lockBtn'),
   modeBtn: document.getElementById('modeBtn'),
   menuBtn: document.getElementById('menuBtn'),
+  fullscreenBtn: document.getElementById('fullscreenBtn'),
+  homeScreenTip: document.getElementById('homeScreenTip'),
+  homeScreenTipClose: document.getElementById('homeScreenTipClose'),
   scaleSlider: document.getElementById('scaleSlider'),
   scaleVal: document.getElementById('scaleVal'),
 
@@ -102,6 +115,7 @@ function handleGameStarted(msg) {
   els.lobbyModal.classList.add('hidden');
   els.roundBanner.classList.add('hidden');
   els.touchOverlay.classList.remove('hidden');
+  maybeShowHomeScreenTip();
 }
 
 function handleReturnedLobby() {
@@ -516,7 +530,64 @@ els.soloModeBtn.addEventListener('click', () => {
   enterSoloMode();
 });
 
+// ---- Full screen ----
+// The game goes full screen when a match starts (needs a tap, so it happens on
+// Start Match / Next Round, or a guest's first touch on the controls). If the
+// player leaves full screen with the small button, we stop forcing it back.
+let fullscreenOptOut = false;
+const HOME_TIP_KEY = 'tabletop_ar_home_tip_seen';
+
+function autoFullscreen() {
+  if (!fullscreenOptOut) enterFullscreen();
+}
+
+function updateFullscreenBtn() {
+  const on = isFullscreen();
+  els.fullscreenBtn.textContent = on ? '⤡' : '⤢';
+  els.fullscreenBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+  els.fullscreenBtn.title = on ? 'Exit full screen' : 'Full screen';
+}
+
+function maybeShowHomeScreenTip() {
+  // iPhone browsers can't hide the address bar from a web page; only a
+  // Home Screen launch runs truly full screen.
+  if (isFullscreenSupported() || isStandaloneApp() || !isIOS()) return;
+  try {
+    if (localStorage.getItem(HOME_TIP_KEY)) return;
+    localStorage.setItem(HOME_TIP_KEY, '1');
+  } catch { /* storage unavailable: still show once this session */ }
+  els.homeScreenTip.classList.remove('hidden');
+  setTimeout(() => els.homeScreenTip.classList.add('hidden'), 9000);
+}
+
+if (isFullscreenSupported() && !isStandaloneApp()) {
+  els.fullscreenBtn.style.display = '';
+  updateFullscreenBtn();
+  onFullscreenChange(updateFullscreenBtn);
+  els.fullscreenBtn.addEventListener('click', () => {
+    if (isFullscreen()) {
+      fullscreenOptOut = true;
+      exitFullscreen();
+    } else {
+      fullscreenOptOut = false;
+      enterFullscreen();
+    }
+  });
+  // Guests get the match start over the network (no tap), so go full screen
+  // on their first touch of the game controls.
+  els.touchOverlay.addEventListener('pointerdown', () => {
+    if (!isFullscreen()) autoFullscreen();
+  }, true);
+}
+
+els.homeScreenTipClose.addEventListener('click', () => {
+  els.homeScreenTip.classList.add('hidden');
+});
+
+installZoomGuard();
+
 els.startGameBtn.addEventListener('click', () => {
+  autoFullscreen();
   sound.unlock();
   arTracker.requestMotionPermission();
   if (isSelfHost()) hostController.startGame();
@@ -531,6 +602,7 @@ els.clearBotsBtn.addEventListener('click', () => {
 });
 
 els.nextRoundBtn.addEventListener('click', () => {
+  autoFullscreen();
   sound.unlock();
   if (isSelfHost()) hostController.startGame();
 });
