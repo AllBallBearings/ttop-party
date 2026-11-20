@@ -226,6 +226,12 @@ export class ARTracker {
   stopCamera() {
     this.ar.stop();
     this.cameraStarted = false;
+    // Restarting the camera starts a new tracking world, so the old anchor
+    // means nothing: re-find the QR (or tap the table) after returning.
+    this.anchor = null;
+    this.anchorSource = null;
+    this.markerVisible = false;
+    this.boardPivot.visible = false;
   }
 
   async requestMotionPermission() {

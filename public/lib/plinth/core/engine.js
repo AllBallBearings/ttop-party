@@ -209,7 +209,23 @@ export class PlinthEngine {
     this.results = [];
     this.inFlight = 0;
     this.display = null;
-    this._callModules('onDetach', { engine: this });
+    // A later start() runs a fresh tracker in a fresh world: forget everything
+    // tied to this session so the new camera/GPU/worker get re-initialised
+    // (capW = 0 forces _configureForCapture on the first new frame).
+    this.capW = 0;
+    this.capH = 0;
+    this.lastResult = null;
+    this.poseHistory.clear();
+    this.points = new Float32Array(0);
+    this.planes = [];
+    this.anchors.clear();
+    this.worldVersion = 0;
+    this.worldTransforms = [];
+    this.frameState = null;
+    this.trackingStatus = 'NOT_AVAILABLE';
+    this.trackingReason = 'INITIALIZING';
+    // Stopping is not detaching: modules stay registered for the next start.
+    this._callModules('onStop', { engine: this });
     this.emit('stop', {});
   }
 
