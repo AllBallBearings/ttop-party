@@ -259,6 +259,42 @@ export class ARTracker {
     return 'preview';
   }
 
+  /**
+   * Which way the player is looking across the board, in board (game) space:
+   * { forward: [x, z], right: [x, z] } unit vectors on the board plane, or
+   * null if there is no board yet. Recomputed from the live camera pose, so
+   * it follows the player as they walk around the table.
+   */
+  getBoardViewBasis() {
+    const cam = this.mode === 'preview' ? this.previewCamera : this.camera;
+    if (this.mode !== 'preview' && !this.anchor) return null;
+    const v = this._basisTmp || (this._basisTmp = {
+      camQ: new THREE.Quaternion(),
+      boardQ: new THREE.Quaternion(),
+      fwd: new THREE.Vector3(),
+      up: new THREE.Vector3(),
+    });
+    this.boardRoot.updateWorldMatrix(true, false);
+    cam.updateWorldMatrix(true, false);
+    cam.getWorldQuaternion(v.camQ);
+    this.boardRoot.getWorldQuaternion(v.boardQ);
+    // Camera direction in board space: q_board^-1 * q_cam.
+    v.camQ.premultiply(v.boardQ.invert());
+    v.fwd.set(0, 0, -1).applyQuaternion(v.camQ);
+    v.up.set(0, 1, 0).applyQuaternion(v.camQ);
+    // View direction + screen-up, flattened onto the board: the view
+    // direction dominates when the phone is held upright, screen-up when it
+    // is held flat over the table, and the sum is well defined in between.
+    let fx = v.fwd.x + v.up.x;
+    let fz = v.fwd.z + v.up.z;
+    const len = Math.hypot(fx, fz);
+    if (len < 1e-4) return null;
+    fx /= len;
+    fz /= len;
+    // Right-hand side on a y-up board: forward x up.
+    return { forward: [fx, fz], right: [-fz, fx] };
+  }
+
   setLocked(locked) {
     this.locked = Boolean(locked);
     // Locked: keep the board exactly where it is in the room (tracking keeps

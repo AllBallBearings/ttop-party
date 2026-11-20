@@ -6,9 +6,12 @@ export class TouchControls {
     this.shootBtnEl = shootBtnEl;
     this.onChange = onChange || (() => {});
 
+    // Stick: x = right (+1) / left (-1), y = up/away (+1) / down/toward (-1),
+    // in screen terms. app.js turns it into a board direction using the
+    // camera's live view of the board.
     this.state = {
-      throttle: 0,
-      turn: 0,
+      x: 0,
+      y: 0,
       jump: false,
       shoot: false,
     };
@@ -41,19 +44,13 @@ export class TouchControls {
     const knobY = Math.sin(angle) * clamped;
     this.stickKnobEl.style.transform = `translate3d(${knobX}px, ${knobY}px, 0)`;
 
-    let normX = knobX / this.maxRadius;
-    // Screen Y down is positive, so pushing UP (dy < 0) means forward (+1)
-    let normY = -knobY / this.maxRadius;
-
+    // Radial deadzone so every direction (diagonals included) is reachable.
     const deadzone = 0.14;
-    if (Math.abs(normX) < deadzone) normX = 0;
-    else normX = (normX - Math.sign(normX) * deadzone) / (1 - deadzone);
-
-    if (Math.abs(normY) < deadzone) normY = 0;
-    else normY = (normY - Math.sign(normY) * deadzone) / (1 - deadzone);
-
-    this.state.turn = Math.max(-1, Math.min(1, normX));
-    this.state.throttle = Math.max(-1, Math.min(1, normY));
+    const mag = clamped / this.maxRadius;
+    const scaled = mag < deadzone ? 0 : (mag - deadzone) / (1 - deadzone);
+    // Screen Y down is positive, so pushing UP (dy < 0) means away (+1).
+    this.state.x = Math.cos(angle) * scaled;
+    this.state.y = -Math.sin(angle) * scaled;
     this._emit();
   }
 
@@ -61,8 +58,8 @@ export class TouchControls {
     this.stickPointerId = null;
     this.stickKnobEl.style.transform = 'translate3d(0px, 0px, 0)';
     this.stickZoneEl.classList.remove('active');
-    this.state.turn = 0;
-    this.state.throttle = 0;
+    this.state.x = 0;
+    this.state.y = 0;
     this._syncKeyboard();
   }
 
@@ -130,14 +127,15 @@ export class TouchControls {
 
   _syncKeyboard() {
     if (this.stickPointerId === null) {
-      let throttle = 0;
-      let turn = 0;
-      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) throttle += 1;
-      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) throttle -= 1;
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) turn -= 1;
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) turn += 1;
-      this.state.throttle = throttle;
-      this.state.turn = turn;
+      let x = 0;
+      let y = 0;
+      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) y += 1;
+      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) y -= 1;
+      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) x -= 1;
+      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) x += 1;
+      const len = Math.hypot(x, y) || 1;
+      this.state.x = x / len;
+      this.state.y = y / len;
     }
 
     if (this.jumpPointers.size === 0) {

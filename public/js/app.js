@@ -98,7 +98,39 @@ let hostMeta = {
 let clientGame = null;
 let currentGameId = null;
 let lastInputSentAt = 0;
-let pendingInput = { throttle: 0, turn: 0, jump: false, shoot: false };
+let pendingInput = { x: 0, y: 0, jump: false, shoot: false };
+
+// Camera-relative movement: "up" on the stick always means away from this
+// player across the board, wherever they stand. The view direction is
+// smoothed so hand shake doesn't wobble the character.
+let viewYaw = null; // board-space angle of "away from me": atan2(x, z)
+const VIEW_SMOOTHING = 10; // 1/s
+
+function updateViewYaw(dt) {
+  const basis = arTracker.getBoardViewBasis();
+  if (!basis) return;
+  const target = Math.atan2(basis.forward[0], basis.forward[1]);
+  if (viewYaw === null) {
+    viewYaw = target;
+    return;
+  }
+  let diff = target - viewYaw;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  viewYaw += diff * Math.min(1, dt * VIEW_SMOOTHING);
+}
+
+/** Stick (x right, y away) -> board-space direction for this player's view. */
+function stickToBoard(x, y) {
+  // Before the board is placed, "away" defaults to the board's far side (-Z).
+  const yaw = viewYaw ?? Math.PI;
+  const fx = Math.sin(yaw);
+  const fz = Math.cos(yaw);
+  // Right = forward x up on a y-up board.
+  const rx = -fz;
+  const rz = fx;
+  return { moveX: x * rx + y * fx, moveZ: x * rz + y * fz };
+}
 
 function sendRelay(payload) {
   if (soloMode || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -189,9 +221,10 @@ function sendInput(immediate = false) {
   if (!immediate && now - lastInputSentAt < 33) return;
   lastInputSentAt = now;
 
+  const move = stickToBoard(pendingInput.x, pendingInput.y);
   const cleanInput = {
-    throttle: Number(pendingInput.throttle.toFixed(3)),
-    turn: Number(pendingInput.turn.toFixed(3)),
+    moveX: Number(move.moveX.toFixed(3)),
+    moveZ: Number(move.moveZ.toFixed(3)),
     jump: pendingInput.jump,
     shoot: pendingInput.shoot,
   };
@@ -657,8 +690,8 @@ els.closeJoinQrBtn.addEventListener('click', () => {
 
 setInterval(() => {
   if (
-    pendingInput.throttle !== 0 ||
-    pendingInput.turn !== 0 ||
+    pendingInput.x !== 0 ||
+    pendingInput.y !== 0 ||
     pendingInput.jump ||
     pendingInput.shoot
   ) {
@@ -674,6 +707,7 @@ function animate(now) {
 
   if (clientGame) clientGame.update(dt);
   arTracker.update(dt);
+  updateViewYaw(dt);
 }
 
 // Boot

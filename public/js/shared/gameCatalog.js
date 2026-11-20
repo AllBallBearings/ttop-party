@@ -6,7 +6,7 @@ export const GAME_CATALOG = [
     minPlayers: 1,
     maxPlayers: 8,
     status: 'playable',
-    controlsHint: 'RC Stick: Up=Forward, Down=Back, L/R=Turn • Jump • Shoot',
+    controlsHint: 'Stick moves relative to you: Up=Away, Down=Toward you • Jump • Shoot',
   },
   {
     id: 'sumo-bumper',
