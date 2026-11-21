@@ -40,6 +40,14 @@ export const TRAJECTORIES = {
     const eye = [eye0[0] + Math.sin(a) * 0.1, eye0[1], eye0[2] - a * 0.1];
     return { q: lookAtQuat(eye, target), t: eye };
   } },
+  // Lean in toward the board and back out again (the camera's distance to
+  // the board halves, then recovers), looking at the board centre.
+  dolly: { frames: 180, pose(i, n) {
+    const k = 0.5 - 0.5 * Math.cos((i / n) * 2 * Math.PI); // 0 -> 1 -> 0
+    const s = 1 - 0.55 * k; // distance scale
+    const eye = [0.03 * Math.sin(i * 0.05), 0.45 * s, 0.5 * s];
+    return { q: lookAtQuat(eye, [0, 0, 0]), t: eye };
+  } },
   // Camera covered for ~1.3 s while the user walks 60° around the table.
   blackout: { frames: 170, pose(i) {
     const blank = i >= 50 && i < 90;
@@ -57,7 +65,7 @@ function blankImage(K, seed) {
   return img;
 }
 
-export function runSequence(name, { width = 270, seed = 1, log = false, imuDriftDegPerSec = 0.6, noise = 2 } = {}) {
+export function runSequence(name, { width = 270, seed = 1, log = false, imuDriftDegPerSec = 0.6, noise = 2, heightScale = 1, noImu = false } = {}) {
   const traj = TRAJECTORIES[name];
   const height = Math.round((width * 16) / 9 / 2) * 2;
   const K = captureIntrinsics(720, 1280).cropAndScale(width, height);
@@ -66,12 +74,14 @@ export function runSequence(name, { width = 270, seed = 1, log = false, imuDrift
   const n = traj.frames;
   const truth0 = traj.pose(0, n);
   const h = truth0.t[1];
-  const tracker = new Tracker(K, { cameraHeight: h });
+  // heightScale != 1: the tracker is told the wrong starting height (as on a
+  // phone, where the real height is unknown); its world is then scaled by it.
+  const tracker = new Tracker(K, { cameraHeight: h * heightScale });
 
   // True world -> tracker world (heading and horizontal position of frame 0).
   const psi0 = yawOfQuat(truth0.q);
   const qAlign = quatFromYaw(-psi0);
-  const toTracker = (p) => quatRotate(qAlign, [p[0] - truth0.t[0], p[1], p[2] - truth0.t[2]]);
+  const toTracker = (p) => quatRotate(qAlign, [p[0] - truth0.t[0], p[1], p[2] - truth0.t[2]]).map((v) => v * heightScale);
   const anchors = [[0, 0, 0], [0.2, 0, -0.15], [-0.25, 0, 0.2]].map((p) => ({ world: p, trk: toTracker(p) }));
 
   const stats = { posErr: [], rotErr: [], anchorErr: [], ms: [], status: [], anchorByFrame: new Array(n).fill(NaN) };
@@ -84,13 +94,13 @@ export function runSequence(name, { width = 270, seed = 1, log = false, imuDrift
     const drift = (imuDriftDegPerSec * time + 20) * (Math.PI / 180);
     const imuNoise = quatFromRotVec([(rand() - 0.5) * 0.003, (rand() - 0.5) * 0.003, (rand() - 0.5) * 0.003]);
     const imuQ = quatNormalize(quatMul(quatMul(quatFromYaw(drift), truth.q), imuNoise));
-    const out = tracker.process({ id: i, time, image: img, imuQ });
+    const out = tracker.process({ id: i, time, image: img, imuQ: noImu ? null : imuQ });
     stats.ms.push(out.ms);
     stats.status.push(out.status === 'NORMAL' ? 'N' : out.reason === 'RELOCALIZING' ? 'R' : 'L');
     if (!out.pose) continue;
     const tTrue = toTracker(truth.t);
     const qTrue = quatNormalize(quatMul(qAlign, truth.q));
-    const pe = Math.hypot(...sub3(out.pose.t, tTrue));
+    const pe = Math.hypot(...sub3(out.pose.t, tTrue)) / heightScale;
     const re = (quatAngle(out.pose.q, qTrue) * 180) / Math.PI;
     let ae = 0;
     let an = 0;
@@ -145,7 +155,9 @@ if (typeof process !== 'undefined' && import.meta.url === `file://${process.argv
   const width = wIdx > 0 ? Number(process.argv[wIdx + 1]) : 270;
   const names = which === 'all' ? Object.keys(TRAJECTORIES) : [which];
   for (const nm of names) {
-    const r = runSequence(nm, { width, log: process.argv.includes('--log') });
+    const hIdx = process.argv.indexOf('--height-scale');
+    const heightScale = hIdx > 0 ? Number(process.argv[hIdx + 1]) : 1;
+    const r = runSequence(nm, { width, heightScale, noImu: process.argv.includes("--no-imu"), log: process.argv.includes('--log') });
     const f = (o, k = 1, d = 2) => `mean ${(o.mean * k).toFixed(d)} p50 ${(o.p50 * k).toFixed(d)} p95 ${(o.p95 * k).toFixed(d)} max ${(o.max * k).toFixed(d)}`;
     console.log(`\n== ${r.name} @ ${r.resolution}`);
     console.log(`  position cm : ${f(r.pos, 100, 1)}`);

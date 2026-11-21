@@ -198,7 +198,40 @@ const arTracker = new ARTracker({
 });
 
 // Inspection hook for automated tests and on-device debugging (?debug).
-if (new URLSearchParams(location.search).has('debug')) window.__tabletop = { arTracker };
+const DEBUG = new URLSearchParams(location.search).has('debug');
+if (DEBUG) window.__tabletop = { arTracker };
+
+// ?debug also shows a small live readout of what the tracker believes, so a
+// problem on a real phone can be described with numbers.
+let debugEl = null;
+function updateDebugReadout() {
+  if (!DEBUG) return;
+  if (!debugEl) {
+    debugEl = document.createElement('pre');
+    Object.assign(debugEl.style, {
+      position: 'fixed', left: '8px', top: '72px', zIndex: '60', margin: '0', padding: '6px 8px',
+      background: 'rgba(2,6,23,0.8)', color: '#a5f3fc', font: '11px/1.35 ui-monospace, monospace',
+      borderRadius: '8px', pointerEvents: 'none', whiteSpace: 'pre',
+    });
+    document.body.appendChild(debugEl);
+  }
+  const e = arTracker.engine;
+  const fs = e.frameState;
+  const a = arTracker.anchor;
+  const cm = (m) => `${(m * 100).toFixed(1)} cm`;
+  const lines = [
+    `mode     ${arTracker.mode}  ${e.trackingStatus}/${e.trackingReason}`,
+    `anchor   ${arTracker.anchorSource || 'none'}${arTracker.markerVisible ? ' (QR in view)' : ''}`,
+    `imu      ${e.imu?.available ? 'on' : 'OFF'}   cam ${e.capW}x${e.capH}  f480 ${Number(e.focal480 || 0).toFixed(0)}`,
+    `cam h    ${cm(e.opts.cameraHeight)} (world scale)`,
+  ];
+  if (fs?.pose) {
+    const t = fs.pose.t;
+    lines.push(`cam pos  ${t.map((v) => (v * 100).toFixed(0)).join(', ')} cm`);
+    if (a) lines.push(`to board ${cm(Math.hypot(t[0] - a.position[0], t[1] - a.position[1], t[2] - a.position[2]))}`);
+  }
+  debugEl.textContent = lines.join('\n');
+}
 
 new TouchControls({
   stickZoneEl: els.stickZone,
@@ -739,6 +772,10 @@ function animate(now) {
   if (clientGame) clientGame.update(dt);
   arTracker.update(dt);
   updateViewYaw(dt);
+  if (DEBUG && now - (updateDebugReadout.last || 0) > 200) {
+    updateDebugReadout.last = now;
+    updateDebugReadout();
+  }
 }
 
 // Boot
