@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "npm run test:ar",
+    "test": "npm run test:games && npm run test:ar",
+    "test:games": "node --test test/games/*.test.mjs",
     "test:ar": "node --test test/plinth/unit.test.mjs test/plinth/tracking.test.mjs",
     "test:ar:browser": "node --test test/plinth/browser.test.mjs",
     "bench:ar": "node test/plinth/sequence.mjs all"

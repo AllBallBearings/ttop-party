@@ -1,4 +1,5 @@
 import { StickmanShowdownEngine } from './shared/stickmanShowdownEngine.js';
+import { PixelHoopsEngine } from './shared/pixelHoopsEngine.js';
 import { getGameDefinition } from './shared/gameCatalog.js';
 
 const BOT_COLORS = [
@@ -29,6 +30,9 @@ export class HostController {
     this.activeEngine = null;
     this.tickTimer = null;
     this.lastTickAt = 0;
+    // Pixel Hoops: winner stays on, everyone else waits in line.
+    this.lastWinnerId = null;
+    this.hoopsQueue = [];
   }
 
   activate(humanPlayers) {
@@ -132,13 +136,17 @@ export class HostController {
     this.stopGameLoop();
 
     const roster = this.getCombinedRoster();
-    this.activeEngine = new StickmanShowdownEngine(roster, {
+    const callbacks = {
       onRoundWin: (winnerId) => {
         const prev = this.winsById.get(winnerId) || 0;
         this.winsById.set(winnerId, prev + 1);
+        if (def.id === 'pixel-hoops') this.lastWinnerId = winnerId;
         this._broadcastHostMeta();
       },
-    });
+    };
+    this.activeEngine = def.id === 'pixel-hoops'
+      ? new PixelHoopsEngine(this._hoopsLineup(roster), callbacks)
+      : new StickmanShowdownEngine(roster, callbacks);
 
     const startPayload = {
       type: 'game_started',
@@ -165,6 +173,30 @@ export class HostController {
         payload: { type: 'game_state', state },
       });
     }, 33);
+  }
+
+  /** Winner stays on court; the next player in line challenges. */
+  _hoopsLineup(roster) {
+    const ids = new Set(roster.map((p) => p.id));
+    this.hoopsQueue = this.hoopsQueue.filter((id) => ids.has(id));
+    for (const p of roster) {
+      if (!this.hoopsQueue.includes(p.id)) this.hoopsQueue.push(p.id);
+    }
+    const champ = ids.has(this.lastWinnerId) ? this.lastWinnerId : null;
+    if (champ) {
+      // Rotate the line: everyone who isn't the champ moves up one spot, so
+      // the loser of the last game goes to the back.
+      const others = this.hoopsQueue.filter((id) => id !== champ);
+      if (this._lastHoopsPair && others.length > 1) {
+        const loser = this._lastHoopsPair.find((id) => id !== champ);
+        const idx = others.indexOf(loser);
+        if (idx >= 0) others.push(others.splice(idx, 1)[0]);
+      }
+      this.hoopsQueue = [champ, ...others];
+    }
+    this._lastHoopsPair = this.hoopsQueue.slice(0, 2);
+    const byId = new Map(roster.map((p) => [p.id, p]));
+    return this.hoopsQueue.map((id) => byId.get(id));
   }
 
   returnToLobby() {
