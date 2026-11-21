@@ -144,6 +144,7 @@ function handleGameStarted(msg) {
   }
   currentGameId = msg.gameId;
   clientGame = createClientGame(msg.gameId, arTracker.boardRoot, msg.config, selfPlayerId);
+  resetActionButtons();
   els.lobbyModal.classList.add('hidden');
   els.roundBanner.classList.add('hidden');
   els.touchOverlay.classList.remove('hidden');
@@ -351,12 +352,42 @@ function renderHudPlayers(players) {
   }
 }
 
+const DEFAULT_BUTTON_UI = {
+  jump: { icon: '⏫', label: 'JUMP' },
+  shoot: { icon: '🎯', label: 'SHOOT' },
+};
+
+function setActionButton(btn, icon, label) {
+  const iconEl = btn.querySelector('.btn-icon');
+  const labelEl = btn.querySelector('.btn-label');
+  if (iconEl && iconEl.textContent !== icon) iconEl.textContent = icon;
+  if (labelEl && labelEl.textContent !== label) labelEl.textContent = label;
+}
+
+function resetActionButtons() {
+  setActionButton(els.jumpBtn, DEFAULT_BUTTON_UI.jump.icon, DEFAULT_BUTTON_UI.jump.label);
+  setActionButton(els.shootBtn, DEFAULT_BUTTON_UI.shoot.icon, DEFAULT_BUTTON_UI.shoot.label);
+}
+
 function handleGameState(state) {
   if (!clientGame || state.gameId !== currentGameId) return;
   clientGame.applyState(state);
-  renderHudPlayers(state.players);
 
-  const me = state.players.find((p) => p.id === selfPlayerId);
+  // Games can supply their own HUD rows and button labels.
+  if (clientGame.getHudPlayers) {
+    renderHudPlayers(clientGame.getHudPlayers(state));
+    const labels = clientGame.controlLabels || {};
+    const icons = { JUKE: '💨', BLOCK: '✋', SHOOT: '🏀', STEAL: '🫳' };
+    setActionButton(els.jumpBtn, icons[labels.jump] || '·', labels.jump || '');
+    setActionButton(els.shootBtn, icons[labels.shoot] || '·', labels.shoot || '');
+    els.shootBtn.classList.toggle('armed', Boolean(labels.armed));
+    els.shootBtn.classList.toggle('unarmed', !labels.armed);
+    els.shootBadge.textContent = labels.badge || '';
+  } else {
+    renderHudPlayers(state.players);
+  }
+
+  const me = !clientGame.getHudPlayers && state.players.find((p) => p.id === selfPlayerId);
   if (me) {
     const armed = me.hasGun && me.alive;
     els.shootBtn.classList.toggle('armed', armed);

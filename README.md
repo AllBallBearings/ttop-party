@@ -9,11 +9,13 @@ Designed so the **1st player to open the URL on their Wi-Fi becomes the Host** (
 - **Cloud Relay (`cloudflare-worker/`)** — Lightweight Cloudflare Worker + SQLite-backed Durable Object (`TabletopRoom`). Hashes `CF-Connecting-IP` so everyone on the same Wi-Fi automatically lands in the same room (and supports `?room=...` via Invite QR for friends on 5G). Zero game compute on the server; promotes the next player automatically if the Host leaves.
 - **Local Dev/LAN Server (`server/`)** — Runs the exact same relay protocol locally over HTTPS/WSS (`npm start`) for offline testing on your own machine or LAN.
 
+- **Games** — *Stickman Showdown* (arena shooter) and *Pixel Hoops 1-on-1* (`public/js/shared/pixelHoopsEngine.js` + `public/js/games/pixelHoopsClient.js`): original half-court streetball in a chunky voxel/pixel-art style. First to 11 (2s and 3s), loser of each point checks the ball, winner stays on and extra players wait on the bench. Offense: stick to dribble, **JUKE** for a burst, hold **SHOOT** to rise and release at the top of the jump (drive in close to dunk). Defense: **BLOCK** and **STEAL**. Bots fill in for missing players.
+
 - **AR Engine (`public/lib/plinth/`)**: **Plinth**, a reusable web AR library modelled on how 8th Wall's engine works. It provides frame-synchronized camera rendering, IMU-seeded visual tracking that keeps the board fixed when the QR leaves view or you walk around the table, automatic metric scale from the printed QR, tap-to-place on the table for solo play, and gestures. See [`public/lib/plinth/README.md`](public/lib/plinth/README.md) and the research notes in [`docs/RESEARCH.md`](public/lib/plinth/docs/RESEARCH.md). Try the standalone demo at `/lib/plinth/examples/place.html`.
 
 ### Tests
 ```bash
-npm test                  # Plinth unit + tracking-accuracy tests (Node)
+npm test                  # game engine + Plinth unit + tracking-accuracy tests (Node)
 npm run test:ar:browser   # full WebGL/worker pipeline in headless Chromium (needs Playwright)
 npm run bench:ar          # accuracy report on rendered camera trajectories
 ```

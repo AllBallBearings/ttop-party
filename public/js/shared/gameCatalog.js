@@ -9,6 +9,15 @@ export const GAME_CATALOG = [
     controlsHint: 'Stick moves relative to you: Up=Away, Down=Toward you • Jump • Shoot',
   },
   {
+    id: 'pixel-hoops',
+    name: 'Pixel Hoops 1-on-1',
+    tagline: 'Half-court streetball on your table. First to 11, winner stays on!',
+    minPlayers: 1,
+    maxPlayers: 8,
+    status: 'playable',
+    controlsHint: 'Offense: JUKE • hold SHOOT, release at the top (drive in close to dunk) • Defense: BLOCK • STEAL',
+  },
+  {
     id: 'sumo-bumper',
     name: 'Tabletop Sumo',
     tagline: 'Knock rival stickmen off the AR platform edge.',
