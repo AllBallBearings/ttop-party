@@ -494,8 +494,13 @@ export class PixelHoopsClient {
       const [hx, hz] = toPx(hoop.x, hoop.z);
       const baseline = ap;
       // Painted lane
-      const laneW = 1.9 * PX;
-      const ftLine = hz + 2.9 * PX;
+      // Key proportions follow a regulation court, scaled to the 3-point radius:
+      // free-throw line ~58% of the arc distance, circle radius ~25%, lane ~53% wide.
+      const r3u = cfg.threePtRadius;
+      const laneW = r3u * 0.53 * PX;
+      const ftDist = r3u * 0.58;
+      const ftR = r3u * 0.25 * PX;
+      const ftLine = hz + ftDist * PX;
       ctx.fillStyle = '#8c1d2c';
       ctx.fillRect(hx - laneW / 2, baseline, laneW, ftLine - baseline);
 
@@ -505,15 +510,15 @@ export class PixelHoopsClient {
       // Lane outline + free throw circle
       ctx.strokeRect(hx - laneW / 2, baseline, laneW, ftLine - baseline);
       ctx.beginPath();
-      ctx.arc(hx, ftLine, 0.9 * PX, 0, Math.PI);
+      ctx.arc(hx, ftLine, ftR, 0, Math.PI);
       ctx.stroke();
       ctx.setLineDash([0.18 * PX, 0.14 * PX]);
       ctx.beginPath();
-      ctx.arc(hx, ftLine, 0.9 * PX, Math.PI, Math.PI * 2);
+      ctx.arc(hx, ftLine, ftR, Math.PI, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
       // Lane hash marks
-      for (const k of [0.9, 1.5, 2.1]) {
+      for (const k of [0.4, 0.62, 0.84].map((f) => f * ftDist)) {
         ctx.beginPath();
         ctx.moveTo(hx - laneW / 2, hz + k * PX);
         ctx.lineTo(hx - laneW / 2 - 0.15 * PX, hz + k * PX);
@@ -523,7 +528,7 @@ export class PixelHoopsClient {
       }
       // Restricted arc
       ctx.beginPath();
-      ctx.arc(hx, hz, 0.7 * PX, 0, Math.PI);
+      ctx.arc(hx, hz, r3u * 0.17 * PX, 0, Math.PI);
       ctx.stroke();
       // Three-point line: straight corners into the arc
       const r3 = cfg.threePtRadius * PX;
@@ -544,7 +549,7 @@ export class PixelHoopsClient {
       ctx.fillStyle = 'rgba(140, 29, 44, 0.85)';
       ctx.fill();
       ctx.stroke();
-      drawPixelTextCentered(ctx, 'HOOPS', cw / 2, ch - ap - 0.55 * PX, 5, '#ffd23f', '#3b0a12');
+      drawPixelTextCentered(ctx, 'HOOPS', cw / 2, ch - ap - 0.55 * PX, 4, '#ffd23f', '#3b0a12');
       // Check-ball spot
       const [cx, cz] = toPx(cfg.checkSpot.x, cfg.checkSpot.z);
       ctx.fillStyle = '#ffffff';
