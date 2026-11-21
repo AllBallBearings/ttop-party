@@ -1,5 +1,6 @@
 import * as THREE from '../../vendor/three/three.module.js';
 import { sound } from '../audio.js';
+import { drawPixelText, drawPixelTextCentered, pixelTextWidth } from './pixelFont.js';
 
 /**
  * Pixel Hoops renderer: original late-80s streetball look in smooth
@@ -63,8 +64,59 @@ function hashString(str) {
   return Math.abs(h);
 }
 
+// ---- Retro rendering: 3-step cel shading and inverted-hull black outlines.
+let toonRamp = null;
+function toonGradient() {
+  if (!toonRamp) {
+    toonRamp = new THREE.DataTexture(new Uint8Array([70, 160, 255]), 3, 1, THREE.RedFormat);
+    toonRamp.magFilter = THREE.NearestFilter;
+    toonRamp.minFilter = THREE.NearestFilter;
+    toonRamp.generateMipmaps = false;
+    toonRamp.needsUpdate = true;
+  }
+  return toonRamp;
+}
+
+/** Cel-shaded material; PBR-only options are ignored. */
+function toon(opts = {}) {
+  const { roughness, metalness, flatShading, ...rest } = opts;
+  return new THREE.MeshToonMaterial({ gradientMap: toonGradient(), ...rest });
+}
+
 function mat(color, opts = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0, flatShading: true, ...opts });
+  return toon({ color, ...opts });
+}
+
+const outlineMats = new Map();
+function outlineMaterial(width) {
+  if (!outlineMats.has(width)) {
+    const m = new THREE.MeshBasicMaterial({ color: 0x0b0b14, side: THREE.BackSide });
+    m.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `vec3 transformed = vec3(position) + normalize(normal) * ${width.toFixed(4)};`
+      );
+    };
+    m.customProgramCacheKey = () => `outline-${width}`;
+    outlineMats.set(width, m);
+  }
+  return outlineMats.get(width);
+}
+
+/** Give every lit mesh under `root` a black back-face shell. */
+function addOutlines(root, width = 0.012) {
+  const targets = [];
+  root.traverse((o) => {
+    if (o.isMesh && !o.userData.noOutline && o.material && !o.material.isMeshBasicMaterial && !o.material.transparent) {
+      targets.push(o);
+    }
+  });
+  for (const m of targets) {
+    const shell = new THREE.Mesh(m.geometry, outlineMaterial(width));
+    shell.userData.noOutline = true;
+    shell.castShadow = false;
+    m.add(shell);
+  }
 }
 
 function mesh(geo, material, x = 0, y = 0, z = 0) {
@@ -102,19 +154,16 @@ function blobShadow(size, opacity, color = 0x000000) {
 }
 
 function makeNameTexture(name, color, score, isSelf) {
-  return canvasTexture(256, 64, (ctx) => {
-    ctx.fillStyle = 'rgba(10, 12, 24, 0.8)';
-    ctx.beginPath();
-    ctx.roundRect(10, 8, 236, 44, 10);
-    ctx.fill();
+  const text = `${isSelf ? '>' : ''}${name} ${score}`.slice(0, 20);
+  return canvasTexture(128, 32, (ctx) => {
+    const scale = pixelTextWidth(text, 1) <= 56 ? 2 : 1;
+    const tw = pixelTextWidth(text, scale);
+    ctx.fillStyle = '#0b0b14';
+    ctx.fillRect(64 - tw / 2 - 5, 4, tw + 10, 22);
     ctx.fillStyle = color;
-    ctx.fillRect(22, 46, 212, 3);
-    ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${isSelf ? '▶ ' : ''}${name}  ${score}`, 128, 28);
-  });
+    ctx.fillRect(64 - tw / 2 - 5, 22, tw + 10, 4);
+    drawPixelTextCentered(ctx, text, 64, 13, scale, '#ffffff');
+  }, { smooth: false });
 }
 
 function jerseyTexture(color, number) {
@@ -126,17 +175,10 @@ function jerseyTexture(color, number) {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, 7);
     ctx.fillRect(0, h - 6, w, 6);
-    ctx.font = 'bold 58px Impact, "Arial Black", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     for (const u of [0.25, 0.75]) {
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-      ctx.strokeText(String(number), u * w, h * 0.56);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(String(number), u * w, h * 0.56);
+      drawPixelTextCentered(ctx, String(number), u * w, h * 0.56, 8, '#ffffff');
     }
-  });
+  }, { smooth: false });
 }
 
 function sockTexture(stripe) {
@@ -159,10 +201,10 @@ function createBaller(player, isSelf) {
 
   const skin = mat(SKIN_TONES[seed % SKIN_TONES.length]);
   const hair = mat(HAIR_COLORS[(seed >> 3) % HAIR_COLORS.length], { roughness: 0.9 });
-  const jersey = new THREE.MeshStandardMaterial({ map: jerseyTexture(jerseyHex, number), roughness: 0.75 });
+  const jersey = toon({ map: jerseyTexture(jerseyHex, number), roughness: 0.75 });
   const shortsMat = mat(jerseyColor.clone().multiplyScalar(0.82));
   const trim = mat(0xffffff);
-  const sock = new THREE.MeshStandardMaterial({ map: sockTexture(jerseyHex), roughness: 0.85 });
+  const sock = toon({ map: sockTexture(jerseyHex), roughness: 0.85 });
   const shoe = mat(0xf1f5f9, { roughness: 0.5 });
   const sole = mat(0x1f2937);
   const accent = mat(jerseyColor);
@@ -297,6 +339,7 @@ function createBaller(player, isSelf) {
   labelSprite.position.set(0, 1.55, 0);
   labelSprite.scale.set(1.1, 0.275, 1);
   body.add(labelSprite);
+  addOutlines(body, 0.011);
 
   return {
     root,
@@ -344,11 +387,38 @@ function createBall() {
   });
   const ball = new THREE.Mesh(
     new THREE.SphereGeometry(0.12, 24, 16),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.75 })
+    toon({ map: tex, roughness: 0.75 })
   );
   ball.castShadow = true;
+  addOutlines(ball, 0.009);
   return ball;
 }
+
+// ---- Chiptune sound effects (square/triangle waves + noise, NES-era style)
+const N = { C4: 261.6, E4: 329.6, G4: 392.0, A4: 440.0, B4: 493.9, C5: 523.3, D5: 587.3, E5: 659.3, F5: 698.5, G5: 784.0, A5: 880.0, C6: 1046.5, E6: 1318.5, G6: 1568.0 };
+const sfx = {
+  swish: () => sound.playNoise({ duration: 0.28, freq: 4200, q: 0.6, gain: 0.1 }),
+  two: () => sound.playNotes([[N.C5], [N.E5], [N.G5, 2]], { step: 0.06 }),
+  three: () => sound.playNotes([[N.C5], [N.E5], [N.G5], [N.C6, 3]], { step: 0.06 }),
+  slam: () => {
+    sound.playNoise({ duration: 0.35, freq: 180, q: 0.7, gain: 0.25, type: 'lowpass' });
+    sound.playNotes([[N.G4], [N.C5], [N.E5], [N.G5], [N.C6], [0], [N.C6, 3]], { step: 0.055, gain: 0.1 });
+  },
+  clank: () => sound.playNotes([[1250, 0.6], [0, 0.3], [980, 1.2]], { type: 'square', step: 0.05, gain: 0.07 }),
+  block: () => sound.playNotes([[N.A5], [N.E5], [N.C5], [N.A4, 2]], { type: 'square', step: 0.045, gain: 0.1 }),
+  steal: () => sound.playNotes([[N.E5], [N.A5], [N.E6, 2]], { type: 'square', step: 0.045, gain: 0.09 }),
+  juke: () => sound.playNotes([[N.C5, 0.5], [N.G5, 0.5], [N.C6, 0.5]], { type: 'triangle', step: 0.04, gain: 0.12 }),
+  jump: () => sound.playNotes([[N.C4, 0.5], [N.G4, 0.5], [N.C5, 0.5]], { type: 'square', step: 0.035, gain: 0.06 }),
+  swipe: () => sound.playNoise({ duration: 0.08, freq: 1800, q: 1.2, gain: 0.07 }),
+  bounce: () => sound.playNotes([[110, 1]], { type: 'triangle', step: 0.06, gain: 0.16 }),
+  whistle: () => sound.playNotes([[2400, 1.5], [0, 0.5], [2400, 3]], { type: 'sine', step: 0.06, gain: 0.06 }),
+  tipoff: () => sound.playNotes([[N.C5], [N.C5], [N.G5, 2], [N.E5], [N.G5, 3]], { step: 0.09, gain: 0.08 }),
+  perfect: () => sound.playNotes([[N.E6, 0.5], [N.G6, 1]], { type: 'square', step: 0.05, gain: 0.05 }),
+  win: () => sound.playNotes(
+    [[N.C5], [N.E5], [N.G5], [N.C6, 2], [N.G5], [N.C6, 4], [0], [N.A5], [N.F5], [N.D5], [N.G5, 6]],
+    { step: 0.1, gain: 0.09 }
+  ),
+};
 
 export class PixelHoopsClient {
   constructor(boardRoot, config, selfPlayerId) {
@@ -372,6 +442,7 @@ export class PixelHoopsClient {
     this.ballShadow = blobShadow(0.3, 0.45);
     this.group.add(this.ballShadow);
     this.ballTarget = new THREE.Vector3(0, 0.5, 0);
+    sfx.tipoff();
   }
 
   _buildCourt(cfg) {
@@ -473,13 +544,7 @@ export class PixelHoopsClient {
       ctx.fillStyle = 'rgba(140, 29, 44, 0.85)';
       ctx.fill();
       ctx.stroke();
-      ctx.save();
-      ctx.font = `bold ${0.42 * PX}px Impact, "Arial Black", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#ffd23f';
-      ctx.fillText('HOOPS', cw / 2, ch - ap - 0.5 * PX);
-      ctx.restore();
+      drawPixelTextCentered(ctx, 'HOOPS', cw / 2, ch - ap - 0.55 * PX, 5, '#ffd23f', '#3b0a12');
       // Check-ball spot
       const [cx, cz] = toPx(cfg.checkSpot.x, cfg.checkSpot.z);
       ctx.fillStyle = '#ffffff';
@@ -487,16 +552,12 @@ export class PixelHoopsClient {
       ctx.arc(cx, cz, 0.06 * PX, 0, Math.PI * 2);
       ctx.fill();
       // Apron lettering
-      ctx.font = `bold ${0.2 * PX}px Impact, "Arial Black", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText('TABLETOP  STREETBALL  LEAGUE', cw / 2, ch - ap / 2);
+      drawPixelTextCentered(ctx, 'TABLETOP STREETBALL LEAGUE', cw / 2, ch - ap / 2, 2, '#ffffff');
     });
 
     const slab = 0.16;
-    const sideMat = new THREE.MeshStandardMaterial({ color: 0x3a1f10, roughness: 0.6 });
-    const floorMat = new THREE.MeshStandardMaterial({ map: courtTex, roughness: 0.38, metalness: 0.05 });
+    const sideMat = toon({ color: 0x3a1f10, roughness: 0.6 });
+    const floorMat = toon({ map: courtTex, roughness: 0.38, metalness: 0.05 });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, slab, d), [sideMat, sideMat, floorMat, sideMat, sideMat, sideMat]);
     floor.position.y = -slab / 2;
     floor.receiveShadow = true;
@@ -507,8 +568,8 @@ export class PixelHoopsClient {
     this.group.add(hoopGroup);
     const bbZ = cfg.backboardZ;
     const poleZ = bbZ - 0.5;
-    const steel = new THREE.MeshStandardMaterial({ color: 0x2d3340, roughness: 0.4, metalness: 0.6 });
-    const pad = new THREE.MeshStandardMaterial({ color: 0x8c1d2c, roughness: 0.8 });
+    const steel = toon({ color: 0x2d3340, roughness: 0.4, metalness: 0.6 });
+    const pad = toon({ color: 0x8c1d2c, roughness: 0.8 });
     const base = mesh(new THREE.BoxGeometry(0.55, 0.22, 0.4), pad, hoop.x, 0.11, poleZ - 0.05);
     hoopGroup.add(base);
     const poleH = hoop.rimY + 0.35;
@@ -528,14 +589,14 @@ export class PixelHoopsClient {
       ctx.lineWidth = 6;
       ctx.strokeRect(cw * 0.33, ch * 0.42, cw * 0.34, ch * 0.42);
     });
-    const glass = new THREE.MeshStandardMaterial({ map: boardTex, transparent: true, roughness: 0.15, metalness: 0.1 });
+    const glass = toon({ map: boardTex, transparent: true, roughness: 0.15, metalness: 0.1 });
     const backboard = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 0.03), glass);
     backboard.position.set(hoop.x, hoop.rimY + 0.3, bbZ);
     hoopGroup.add(backboard);
 
     this.rim = new THREE.Group();
     this.rim.position.set(hoop.x, hoop.rimY, hoop.z);
-    const rimMat = new THREE.MeshStandardMaterial({ color: 0xff5a1f, roughness: 0.35, metalness: 0.5 });
+    const rimMat = toon({ color: 0xff5a1f, roughness: 0.35, metalness: 0.5 });
     const torus = mesh(new THREE.TorusGeometry(hoop.rimRadius, 0.016, 8, 32), rimMat);
     torus.rotation.x = Math.PI / 2;
     this.rim.add(torus);
@@ -570,6 +631,7 @@ export class PixelHoopsClient {
       new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
     ));
     hoopGroup.add(this.net);
+    addOutlines(hoopGroup, 0.014);
 
     // Dot-matrix scoreboard on top of the backboard
     this.scoreCanvas = document.createElement('canvas');
@@ -578,7 +640,7 @@ export class PixelHoopsClient {
     this.scoreTex = new THREE.CanvasTexture(this.scoreCanvas);
     this.scoreTex.colorSpace = THREE.SRGBColorSpace;
     const sbMat = new THREE.MeshBasicMaterial({ map: this.scoreTex });
-    const sbFrame = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5 });
+    const sbFrame = toon({ color: 0x111827, roughness: 0.5 });
     const scoreboard = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 0.06), [sbFrame, sbFrame, sbFrame, sbFrame, sbMat, sbFrame]);
     scoreboard.position.set(hoop.x, hoop.rimY + 0.98, bbZ - 0.03);
     hoopGroup.add(scoreboard);
@@ -586,7 +648,7 @@ export class PixelHoopsClient {
     this.scoreKey = '';
 
     // Sideline bench for players waiting their turn
-    const benchWood = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.7 });
+    const benchWood = toon({ color: 0x6b4423, roughness: 0.7 });
     const bx = -w / 2 + 1.9;
     const bz = d / 2 - 0.15;
     this.group.add(mesh(new THREE.BoxGeometry(3.4, 0.05, 0.26), benchWood, bx, 0.26, bz));
@@ -634,16 +696,14 @@ export class PixelHoopsClient {
   }
 
   _popup(text, color, x, y, z) {
-    const tex = canvasTexture(256, 64, (ctx) => {
-      ctx.font = 'bold 42px Impact, "Arial Black", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 7;
-      ctx.strokeStyle = '#0b0b14';
-      ctx.strokeText(text, 128, 33);
-      ctx.fillStyle = color;
-      ctx.fillText(text, 128, 33);
-    });
+    const tex = canvasTexture(128, 32, (ctx) => {
+      const scale = pixelTextWidth(text, 3) <= 120 ? 3 : 2;
+      // Thick arcade outline: stamp the text in black around itself.
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [2, 2]]) {
+        drawPixelTextCentered(ctx, text, 64 + ox * scale, 16 + oy * scale, scale, '#0b0b14');
+      }
+      drawPixelTextCentered(ctx, text, 64, 16, scale, color);
+    }, { smooth: false });
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     sprite.position.set(x, y, z);
     sprite.scale.set(1.8, 0.45, 1);
@@ -707,8 +767,10 @@ export class PixelHoopsClient {
           this.netShake = 1;
           this._burst(hoop.x, hoop.rimY - 0.2, hoop.z, ev.color, ev.dunk ? 24 : 14, 2.4);
           this._popup(ev.dunk ? 'SLAM!' : ev.points === 3 ? '3 PTS!' : '2 PTS', ev.color, hoop.x, hoop.rimY + 0.7, hoop.z + 0.4);
-          if (ev.dunk) sound.playElim();
-          else sound.playPickup();
+          sfx.swish();
+          if (ev.dunk) sfx.slam();
+          else if (ev.points === 3) sfx.three();
+          else sfx.two();
           break;
         }
         case 'rim_shake':
@@ -717,43 +779,45 @@ export class PixelHoopsClient {
         case 'clank':
           this.rimShake = 0.6;
           this._burst(ev.x, ev.y, ev.z, 0xff5a1f, 6, 1.6, 0.04);
-          sound.playHit();
+          sfx.clank();
           break;
         case 'block':
           this._burst(ev.x, ev.y, ev.z, 0xffffff, 12, 3.0);
           this._popup('BLOCKED!', '#ff3b30', ev.x, ev.y + 0.6, ev.z);
-          sound.playHit();
+          sfx.block();
           break;
         case 'steal':
           this._burst(ev.x, 0.5, ev.z, 0xffd23f, 10, 2.4);
           this._popup('STEAL!', '#ffd23f', ev.x, 1.6, ev.z);
-          sound.playPickup();
+          sfx.steal();
           break;
         case 'swipe':
-          if (ev.playerId === this.selfPlayerId) sound.playShoot();
+          if (ev.playerId === this.selfPlayerId) sfx.swipe();
           break;
         case 'juke':
           this._burst(ev.x, 0.05, ev.z, 0xe2e8f0, 6, 1.4, 0.05);
-          if (ev.playerId === this.selfPlayerId) sound.playJump();
+          if (ev.playerId === this.selfPlayerId) sfx.juke();
           break;
         case 'jump':
         case 'shot_rise':
         case 'dunk_start':
-          if (ev.playerId === this.selfPlayerId) sound.playJump();
+          if (ev.playerId === this.selfPlayerId) sfx.jump();
           break;
         case 'shot':
           if (ev.playerId === this.selfPlayerId && ev.timing > 0.85) {
             this._popup('PERFECT', '#4ade80', ev.x, ev.y + 0.5, ev.z);
+            sfx.perfect();
           }
           break;
         case 'bounce':
-          sound.playLand();
+          sfx.bounce();
           break;
         case 'check':
           this._popup('CHECK BALL', '#ffffff', this.config.checkSpot.x, 1.8, this.config.checkSpot.z);
+          sfx.whistle();
           break;
         case 'round_over':
-          sound.playWin();
+          sfx.win();
           break;
         default:
           break;
