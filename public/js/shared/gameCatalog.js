@@ -15,7 +15,7 @@ export const GAME_CATALOG = [
     minPlayers: 1,
     maxPlayers: 8,
     status: 'playable',
-    controlsHint: 'Offense: JUKE • hold SHOOT, release at the top (drive in close to dunk) • Defense: BLOCK • STEAL',
+    controlsHint: 'JUKE: still = pump fake, cut sideways = crossover, drive = spin • SHOOT: pull back = fadeaway, slide in close = hook, at the rim = layup/dunk • Defense: BLOCK • STEAL',
   },
   {
     id: 'sumo-bumper',

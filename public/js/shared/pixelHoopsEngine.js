@@ -33,6 +33,24 @@ const BALL_GRAVITY = 9.8;
 const BLOCK_JUMP_VY = 6.6;
 const SHOT_JUMP_VY = 5.6;
 const DUNK_RANGE = 1.55;
+const WINDMILL_RANGE = 2.4; // long take-off dunk at full speed
+const HOOK_RANGE = 2.7;
+const SPIN_TIME = 0.34;
+const CROSSOVER_TIME = 0.22;
+const PUMP_FAKE_TIME = 0.4;
+
+const MOVE_NAMES = {
+  spin: 'SPIN MOVE',
+  crossover: 'CROSSOVER',
+  pumpfake: 'PUMP FAKE',
+  fadeaway: 'FADEAWAY',
+  hook: 'HOOK SHOT',
+  layup: 'FINGER ROLL',
+  power: 'POWER JAM!',
+  tomahawk: 'TOMAHAWK!',
+  windmill: 'WINDMILL!',
+  reverse: 'REVERSE JAM!',
+};
 const MAX_SHOT_RANGE = 7.2;
 const STEAL_RANGE = 0.85;
 const STEAL_COOLDOWN = 0.75;
@@ -112,8 +130,12 @@ export class PixelHoopsEngine {
       yaw: Math.PI,
       grounded: true,
       animPhase: 0,
-      action: 'idle', // idle | dribble | shoot | dunk | block | steal | stumble | celebrate
+      action: 'idle', // idle | dribble | shoot | dunk | layup | block | steal | stumble | celebrate | spin | crossover | pumpfake
+      move: '', // style of the current action: jumper/fadeaway/hook, power/tomahawk/windmill/reverse
       actionTimer: 0,
+      actionStart: 0,
+      actionDur: 0,
+      ballHand: -1, // -1 = right hand, 1 = left hand
       jukeTimer: 0,
       jukeCooldown: 0,
       jukeX: 0,
@@ -259,14 +281,21 @@ export class PixelHoopsEngine {
       if (d < DUNK_RANGE * 0.95 && (defGap > 0.7 || this.rng() < 0.03)) {
         toward(HOOP.x, HOOP.z + 0.6);
         input.shoot = true;
+      } else if (d > 1.8 && d < 5.4 && defGap < 1.1 && bot.jukeCooldown <= 0 && this.rng() < 0.02) {
+        input.jump = true; // pump fake: juke with the stick centred
       } else if (d > 1.8 && d < 5.4 && this.rng() < (defGap > 1.2 ? 0.06 : 0.012)) {
         input.shoot = true;
         b.releaseVy = (this.rng() - 0.5) * 2.2;
+        if (defGap < 1.3) {
+          // Contested: fade away from the hoop.
+          input.moveX = (bot.x - HOOP.x) / d;
+          input.moveZ = (bot.z - HOOP.z) / d;
+        }
       } else if (d > 6.2) {
         toward(HOOP.x, HOOP.z + 3.0);
       } else {
         toward(d > 2.6 ? sideX : HOOP.x, HOOP.z + 0.4);
-        if (defGap < 0.8 && bot.jukeCooldown <= 0 && this.rng() < 0.08) input.jump = true;
+        if (defGap < 0.8 && bot.jukeCooldown <= 0 && this.rng() < 0.035) input.jump = true;
       }
     } else if (opp && this.ball.state === 'held' && this.ball.ownerId === opp.id) {
       // Defense: stay between the ball and the hoop.
@@ -277,7 +306,15 @@ export class PixelHoopsEngine {
       toward(opp.x + (hx / hl) * gap, opp.z + (hz / hl) * gap);
       const gapNow = Math.hypot(opp.x - bot.x, opp.z - bot.z);
       if (gapNow < STEAL_RANGE && bot.stealCooldown <= 0 && this.rng() < 0.035) input.shoot = true;
-      if (opp.shootHeld || opp.action === 'dunk') {
+      if (opp.action === 'pumpfake') {
+        if (!b.bitten && gapNow < 1.6) {
+          b.bitten = true;
+          if (this.rng() < 0.55) input.jump = true;
+        }
+      } else {
+        b.bitten = false;
+      }
+      if (opp.shootHeld || opp.action === 'dunk' || opp.action === 'layup') {
         b.reaction += dt;
         if (b.reaction > 0.12 + this.rng() * 0.15 && gapNow < 1.6) input.jump = true;
       } else {
@@ -337,14 +374,14 @@ export class PixelHoopsEngine {
     p.stealCooldown = Math.max(0, p.stealCooldown - dt);
     if (p.actionTimer > 0) {
       p.actionTimer -= dt;
-      if (p.actionTimer <= 0 && (p.action === 'steal' || p.action === 'stumble' || p.action === 'celebrate')) {
+      if (p.actionTimer <= 0 && ['steal', 'stumble', 'celebrate', 'spin', 'crossover', 'pumpfake'].includes(p.action)) {
         p.action = this.ball.ownerId === p.id && this.ball.state === 'held' ? 'dribble' : 'idle';
       }
     }
 
     const live = this.phase === 'live';
     const hasBall = this.ball.state === 'held' && this.ball.ownerId === p.id;
-    const canMove = live && p.grounded && p.action !== 'stumble' && p.action !== 'dunk' && !p.shootHeld;
+    const canMove = live && p.grounded && !['stumble', 'dunk', 'layup', 'pumpfake'].includes(p.action) && !p.shootHeld;
 
     // ---- Movement
     const mag = Math.hypot(input.moveX, input.moveZ);
@@ -365,7 +402,7 @@ export class PixelHoopsEngine {
         p.vx = 0;
         p.vz = 0;
       }
-    } else if (p.grounded && p.action !== 'dunk') {
+    } else if (p.grounded && p.action !== 'dunk' && p.action !== 'layup') {
       p.vx *= Math.max(0, 1 - dt * 12);
       p.vz *= Math.max(0, 1 - dt * 12);
     }
@@ -379,21 +416,11 @@ export class PixelHoopsEngine {
 
     // ---- Actions
     if (live && hasBall) {
-      if (jumpPressed && p.grounded && p.jukeCooldown <= 0 && !p.shootHeld) {
-        let jx = input.moveX;
-        let jz = input.moveZ;
-        const jl = Math.hypot(jx, jz);
-        if (jl < 0.2) { jx = Math.sin(p.yaw); jz = Math.cos(p.yaw); } else { jx /= jl; jz /= jl; }
-        p.jukeX = jx;
-        p.jukeZ = jz;
-        p.jukeTimer = JUKE_TIME;
-        p.jukeCooldown = JUKE_COOLDOWN;
-        this.events.push({ type: 'juke', playerId: p.id, x: p.x, z: p.z });
+      if (jumpPressed && p.grounded && p.jukeCooldown <= 0 && !p.shootHeld && p.action !== 'pumpfake') {
+        this._startJuke(p, input);
       }
-      if (shootPressed && p.grounded) {
-        const d = distToHoop(p.x, p.z);
-        if (d <= DUNK_RANGE) this._startDunk(p);
-        else this._startJumpShot(p);
+      if (shootPressed && p.grounded && p.action !== 'pumpfake') {
+        this._startOffensiveMove(p, input);
       }
     } else if (live && !hasBall) {
       if (jumpPressed && p.grounded && p.action !== 'stumble') {
@@ -418,13 +445,13 @@ export class PixelHoopsEngine {
     if (p.z < BACKBOARD_Z + 0.25 && Math.abs(p.x - HOOP.x) < 0.9) p.z = BACKBOARD_Z + 0.25;
 
     if (!p.grounded || p.vy > 0) {
-      p.vy -= GRAVITY * (p.action === 'dunk' ? 0.85 : 1) * dt;
+      p.vy -= GRAVITY * (p.action === 'dunk' || p.action === 'layup' ? 0.85 : 1) * dt;
       p.y += p.vy * dt;
       if (p.y <= 0) {
         p.y = 0;
         p.vy = 0;
         p.grounded = true;
-        if (p.action === 'block' || p.action === 'shoot' || p.action === 'dunk') {
+        if (['block', 'shoot', 'dunk', 'layup'].includes(p.action)) {
           p.action = this.ball.ownerId === p.id && this.ball.state === 'held' ? 'dribble' : 'idle';
         }
         this.events.push({ type: 'land', playerId: p.id, x: p.x, z: p.z });
@@ -453,15 +480,117 @@ export class PixelHoopsEngine {
     }
   }
 
-  _startJumpShot(p) {
+  _setAction(p, action, dur, move = '') {
+    p.action = action;
+    p.move = move;
+    p.actionStart = this.roundTime;
+    p.actionDur = dur;
+  }
+
+  _announce(p, move) {
+    this.events.push({ type: 'move', playerId: p.id, move, name: MOVE_NAMES[move] || move, x: p.x, y: p.y, z: p.z });
+  }
+
+  /** JUKE button with the ball: pump fake (stick centred), crossover (cut sideways) or spin move. */
+  _startJuke(p, input) {
+    const sl = Math.hypot(input.moveX, input.moveZ);
+    p.jukeCooldown = JUKE_COOLDOWN;
+    if (sl < 0.25) {
+      this._setAction(p, 'pumpfake', PUMP_FAKE_TIME);
+      p.actionTimer = PUMP_FAKE_TIME;
+      p.vx = 0;
+      p.vz = 0;
+      p.yaw = Math.atan2(HOOP.x - p.x, HOOP.z - p.z);
+      this._announce(p, 'pumpfake');
+      this.events.push({ type: 'juke', playerId: p.id, move: 'pumpfake', x: p.x, z: p.z });
+      return;
+    }
+    const sx = input.moveX / sl;
+    const sz = input.moveZ / sl;
+    const fx = Math.sin(p.yaw);
+    const fz = Math.cos(p.yaw);
+    const cross = fx * sz - fz * sx;
+    const crossover = Math.abs(cross) > 0.6;
+    const dur = crossover ? CROSSOVER_TIME : SPIN_TIME;
+    p.jukeX = sx;
+    p.jukeZ = sz;
+    p.jukeTimer = dur;
+    p.actionTimer = dur;
+    this._setAction(p, crossover ? 'crossover' : 'spin', dur);
+    if (crossover) p.ballHand = -p.ballHand;
+    this._announce(p, p.action);
+    this.events.push({ type: 'juke', playerId: p.id, move: p.action, x: p.x, z: p.z });
+  }
+
+  /** SHOOT button with the ball: picks a dunk, layup, hook or jump shot from the situation. */
+  _startOffensiveMove(p, input) {
+    const d = distToHoop(p.x, p.z);
+    const speed = Math.hypot(p.vx, p.vz);
+    const tx = (HOOP.x - p.x) / (d || 1);
+    const tz = (HOOP.z - p.z) / (d || 1);
+    const towardSpeed = p.vx * tx + p.vz * tz;
+    const opp = this._opponentOf(p.id);
+    let crowded = false;
+    if (opp) {
+      const od = Math.hypot(opp.x - p.x, opp.z - p.z);
+      const ox = (opp.x - p.x) / (od || 1);
+      const oz = (opp.z - p.z) / (od || 1);
+      crowded = od < 0.7 && ox * tx + oz * tz > 0.3 && opp.grounded;
+    }
+
+    if (d <= DUNK_RANGE) {
+      if (crowded || speed < 1.2) return this._startLayup(p);
+      // Under / behind the rim: reverse. Flying in: tomahawk. Otherwise power jam.
+      const style = p.z < HOOP.z + 0.35 ? 'reverse' : speed > 2.9 ? 'tomahawk' : 'power';
+      return this._startDunk(p, style);
+    }
+    if (d <= WINDMILL_RANGE && speed > 2.9 && towardSpeed > speed * 0.75 && !crowded) {
+      return this._startDunk(p, 'windmill');
+    }
+    const sl = Math.hypot(input.moveX, input.moveZ);
+    const stickToward = sl > 0.3 ? (input.moveX * tx + input.moveZ * tz) / sl : 0;
+    const sideways = speed > 1.5 && Math.abs(towardSpeed) < speed * 0.5;
+    if (d <= HOOK_RANGE && sideways) return this._startJumpShot(p, 'hook');
+    if (stickToward < -0.5) return this._startJumpShot(p, 'fadeaway');
+    return this._startJumpShot(p, 'jumper');
+  }
+
+  _startJumpShot(p, style = 'jumper') {
     p.shootHeld = true;
-    p.action = 'shoot';
-    p.vy = SHOT_JUMP_VY;
+    this._setAction(p, 'shoot', 0.6, style);
+    p.vy = SHOT_JUMP_VY * (style === 'hook' ? 0.85 : 1);
     p.grounded = false;
-    p.vx *= 0.25;
-    p.vz *= 0.25;
+    const tx = HOOP.x - p.x;
+    const tz = HOOP.z - p.z;
+    const tl = Math.hypot(tx, tz) || 1;
+    if (style === 'fadeaway') {
+      // Drift back away from the defender.
+      p.vx = (-tx / tl) * 1.7;
+      p.vz = (-tz / tl) * 1.7;
+    } else {
+      p.vx *= 0.25;
+      p.vz *= 0.25;
+    }
+    // Hook shots are taken side-on to the rim.
+    p.yaw = Math.atan2(tx, tz) + (style === 'hook' ? (p.ballHand < 0 ? -Math.PI / 2 : Math.PI / 2) : 0);
+    if (style !== 'jumper') this._announce(p, style);
+    this.events.push({ type: 'shot_rise', playerId: p.id, move: style, x: p.x, z: p.z });
+  }
+
+  _startLayup(p) {
+    this._setAction(p, 'layup', 0.42, 'layup');
+    p.vy = 5.6;
+    p.grounded = false;
+    const dx = HOOP.x - p.x;
+    const dz = HOOP.z + 0.35 - p.z;
+    p.vx = dx / 0.5;
+    p.vz = dz / 0.5;
     p.yaw = Math.atan2(HOOP.x - p.x, HOOP.z - p.z);
-    this.events.push({ type: 'shot_rise', playerId: p.id, x: p.x, z: p.z });
+    this.ball.state = 'dunk';
+    this.ball.ownerId = p.id;
+    this.ball.flight = { t: 0, dur: 0.38, shooterId: p.id, points: 2, dunk: false, layup: true, style: 'layup' };
+    this.lastShot = { shooterId: p.id, points: 2 };
+    this.events.push({ type: 'dunk_start', playerId: p.id, move: 'layup', x: p.x, z: p.z });
   }
 
   _releaseJumpShot(p) {
@@ -471,14 +600,20 @@ export class PixelHoopsEngine {
 
     // Timing: 1.0 = released right at the top of the jump.
     const timing = clamp(1 - Math.abs(p.vy) / 4.2, 0, 1);
+    const style = p.move || 'jumper';
     let pct = d < 2.2 ? 0.72 : d < THREE_PT_RADIUS ? 0.58 : 0.46;
     pct -= Math.max(0, d - THREE_PT_RADIUS) * 0.09;
     pct += (timing - 0.6) * 0.55;
+    if (style === 'fadeaway') pct -= 0.06;
+    if (style === 'hook') pct += 0.05;
     let contest = 0;
     if (opp) {
       const od = Math.hypot(opp.x - p.x, opp.z - p.z);
       contest = clamp((1.6 - od) / 1.6, 0, 1);
       if (!opp.grounded) contest *= 1.35;
+      // Fadeaways and hooks keep the ball away from the defender.
+      if (style === 'fadeaway') contest *= 0.5;
+      if (style === 'hook') contest *= 0.6;
       pct -= contest * 0.32;
     }
     if (d > MAX_SHOT_RANGE) pct = 0.02;
@@ -488,24 +623,32 @@ export class PixelHoopsEngine {
     const points = d > THREE_PT_RADIUS ? 3 : 2;
     const hx = Math.sin(p.yaw);
     const hz = Math.cos(p.yaw);
-    const start = { x: p.x + hx * 0.25, y: p.y + 1.25, z: p.z + hz * 0.25 };
-    this._launchBall(p, start, made, points, false, { timing, contest });
+    const rx = -hz;
+    const rz = hx;
+    const start = style === 'hook'
+      ? { x: p.x + rx * p.ballHand * -0.35, y: p.y + 1.5, z: p.z + rz * p.ballHand * -0.35 }
+      : { x: p.x + hx * 0.25, y: p.y + 1.25, z: p.z + hz * 0.25 };
+    const blockReach = style === 'fadeaway' ? 0.42 : style === 'hook' ? 0.38 : 0.62;
+    this._launchBall(p, start, made, points, false, { timing, contest, style, blockReach });
     this.events.push({ type: 'shot', playerId: p.id, timing: Number(timing.toFixed(2)), points, x: start.x, y: start.y, z: start.z });
   }
 
-  _startDunk(p) {
-    p.action = 'dunk';
-    p.vy = 6.8;
+  _startDunk(p, style = 'power') {
+    const t = style === 'windmill' ? 0.8 : style === 'reverse' ? 0.66 : 0.62;
+    this._setAction(p, 'dunk', t, style);
+    p.vy = style === 'windmill' ? 7.4 : 6.8;
     p.grounded = false;
+    // Reverse jams finish on the far side of the rim, facing away from it.
+    const endZ = HOOP.z + (style === 'reverse' ? -0.12 : 0.18);
     const dx = HOOP.x - p.x;
-    const dz = HOOP.z + 0.18 - p.z;
-    const t = 0.62;
+    const dz = endZ - p.z;
     p.vx = dx / t;
     p.vz = dz / t;
-    p.yaw = Math.atan2(dx, dz);
+    // Reverse jams finish with the back to the backboard.
+    p.yaw = style === 'reverse' ? 0 : Math.atan2(dx, dz);
     this.ball.state = 'dunk';
     this.ball.ownerId = p.id;
-    this.ball.flight = { t: 0, dur: t, shooterId: p.id, points: 2, dunk: true };
+    this.ball.flight = { t: 0, dur: t, shooterId: p.id, points: 2, dunk: true, style };
     this.lastShot = { shooterId: p.id, points: 2 };
     this.events.push({ type: 'dunk_start', playerId: p.id, x: p.x, z: p.z });
   }
@@ -580,15 +723,35 @@ export class PixelHoopsEngine {
       const hz = Math.cos(owner.yaw);
       const rx = -hz;
       const rz = hx;
-      if (owner.shootHeld || owner.action === 'shoot') {
+      const hand = -owner.ballHand; // +1 = right side
+      if ((owner.shootHeld || owner.action === 'shoot') && owner.move === 'hook') {
+        // Ball held high out to the side, away from the defender.
+        const lift = clamp((this.roundTime - owner.actionStart) / 0.3, 0, 1);
+        ball.x = owner.x + rx * hand * 0.35;
+        ball.z = owner.z + rz * hand * 0.35;
+        ball.y = owner.y + 0.9 + lift * 0.6;
+      } else if (owner.shootHeld || owner.action === 'shoot') {
         ball.x = owner.x + hx * 0.18;
         ball.y = owner.y + 1.25;
         ball.z = owner.z + hz * 0.18;
+      } else if (owner.action === 'pumpfake') {
+        // Up to the forehead and back down.
+        const prog = clamp((this.roundTime - owner.actionStart) / PUMP_FAKE_TIME, 0, 1);
+        ball.x = owner.x + hx * 0.22;
+        ball.z = owner.z + hz * 0.22;
+        ball.y = owner.y + 0.75 + Math.sin(prog * Math.PI) * 0.55;
+      } else if (owner.action === 'crossover') {
+        // Low bounce across the body from the old hand to the new one.
+        const prog = clamp((this.roundTime - owner.actionStart) / CROSSOVER_TIME, 0, 1);
+        const sidePos = (prog * 2 - 1) * 0.2 * hand;
+        ball.x = owner.x + hx * 0.3 + rx * sidePos;
+        ball.z = owner.z + hz * 0.3 + rz * sidePos;
+        ball.y = owner.y + BALL_RADIUS + Math.abs(prog - 0.5) * 0.6;
       } else {
-        // Dribble: bounce at the right hand.
+        // Dribble: bounce at the ball hand.
         const bounce = Math.abs(Math.sin(owner.animPhase * 1.6));
-        ball.x = owner.x + hx * 0.28 + rx * 0.2;
-        ball.z = owner.z + hz * 0.28 + rz * 0.2;
+        ball.x = owner.x + hx * 0.28 + rx * 0.2 * hand;
+        ball.z = owner.z + hz * 0.28 + rz * 0.2 * hand;
         ball.y = owner.y + BALL_RADIUS + bounce * 0.48;
       }
       return;
@@ -599,9 +762,36 @@ export class PixelHoopsEngine {
       const owner = this.players.get(f.shooterId);
       f.t += dt;
       if (owner) {
-        ball.x = owner.x + Math.sin(owner.yaw) * 0.22;
-        ball.z = owner.z + Math.cos(owner.yaw) * 0.22;
-        ball.y = owner.y + 1.35 + Math.min(0.35, f.t * 0.8);
+        const fx = Math.sin(owner.yaw);
+        const fz = Math.cos(owner.yaw);
+        const rx = -fz;
+        const rz = fx;
+        const prog = clamp(f.t / f.dur, 0, 1);
+        let fwd = 0.22;
+        let up = 1.35 + Math.min(0.35, f.t * 0.8);
+        let side = 0;
+        if (f.style === 'windmill') {
+          // Big circle down by the hip and back up over the top.
+          const a = prog * Math.PI * 2 + Math.PI / 2;
+          fwd = 0.1 + Math.cos(a) * 0.45;
+          up = 1.05 + Math.sin(a) * 0.5 + prog * 0.45;
+          side = -0.22;
+        } else if (f.style === 'tomahawk') {
+          // Cocked back behind the head, then hammered forward.
+          fwd = prog < 0.6 ? -0.18 : -0.18 + (prog - 0.6) * 1.1;
+          up = 1.5 + prog * 0.25;
+          side = -0.12;
+        } else if (f.style === 'reverse') {
+          fwd = -0.2;
+          up = 1.4 + prog * 0.3;
+        } else if (f.style === 'layup') {
+          fwd = 0.28;
+          up = 1.3 + prog * 0.4;
+          side = -0.1;
+        }
+        ball.x = owner.x + fx * fwd + rx * side;
+        ball.z = owner.z + fz * fwd + rz * side;
+        ball.y = owner.y + up;
       }
       const opp = owner ? this._opponentOf(owner.id) : null;
       if (opp && !opp.grounded && !f.blockRolled && f.t < f.dur * 0.85) {
@@ -614,6 +804,26 @@ export class PixelHoopsEngine {
             return;
           }
         }
+      }
+      if (f.t >= f.dur && f.layup && owner) {
+        // Finger roll off the fingertips: short soft shot, defense can still bother it.
+        const opp2 = this._opponentOf(owner.id);
+        let pct = 0.82;
+        if (opp2) {
+          const od = Math.hypot(opp2.x - owner.x, opp2.z - owner.z);
+          pct -= clamp((1.2 - od) / 1.2, 0, 1) * (opp2.grounded ? 0.25 : 0.45);
+        }
+        const made = this.rng() < clamp(pct, 0.1, 0.92);
+        this._launchBall(owner, { x: ball.x, y: ball.y, z: ball.z }, made, 2, false, { style: 'layup', blockReach: 0.5 });
+        this.ball.flight.dur = Math.max(0.3, this.ball.flight.dur * 0.6);
+        // Re-aim for the shorter flight time.
+        const fl = this.ball.flight;
+        const tgt = made ? { x: HOOP.x, y: HOOP.rimY + 0.02, z: HOOP.z } : { x: HOOP.x + (this.rng() - 0.5) * 0.5, y: HOOP.rimY + 0.04, z: HOOP.z + HOOP.rimRadius };
+        this.ball.vx = (tgt.x - ball.x) / fl.dur;
+        this.ball.vz = (tgt.z - ball.z) / fl.dur;
+        this.ball.vy = (tgt.y - ball.y + 0.5 * BALL_GRAVITY * fl.dur * fl.dur) / fl.dur;
+        this._announce(owner, 'layup');
+        return;
       }
       if (f.t >= f.dur) {
         if (owner) {
@@ -630,7 +840,7 @@ export class PixelHoopsEngine {
         ball.vy = -2.5;
         ball.flight = { t: 0, dur: 0, made: true, points: 2, shooterId: f.shooterId, dunk: true, sunk: true };
         this.events.push({ type: 'rim_shake', x: HOOP.x, z: HOOP.z });
-        this._score(f.shooterId, 2, true);
+        this._score(f.shooterId, 2, true, f.style);
       }
       return;
     }
@@ -659,7 +869,7 @@ export class PixelHoopsEngine {
         if (opp && !opp.grounded) {
           const handY = opp.y + 1.45;
           const dist = Math.hypot(opp.x - ball.x, opp.z - ball.z);
-          if (dist < 0.62 && Math.abs(handY - ball.y) < 0.5) {
+          if (dist < (f.blockReach ?? 0.62) && Math.abs(handY - ball.y) < 0.5) {
             this._block(opp, shooter);
             return;
           }
@@ -674,7 +884,7 @@ export class PixelHoopsEngine {
           ball.vz = 0;
           ball.vy = -1.8;
           f.sunk = true;
-          this._score(f.shooterId, f.points, false);
+          this._score(f.shooterId, f.points, false, f.style || '');
         } else {
           // Off the rim.
           const ox = ball.x - HOOP.x;
@@ -762,7 +972,7 @@ export class PixelHoopsEngine {
     this.events.push({ type: 'block', playerId: blocker.id, x: ball.x, y: ball.y, z: ball.z });
   }
 
-  _score(shooterId, points, dunk) {
+  _score(shooterId, points, dunk, style = '') {
     const shooter = this.players.get(shooterId);
     if (!shooter) return;
     shooter.score += points;
@@ -776,6 +986,8 @@ export class PixelHoopsEngine {
       color: shooter.color,
       points,
       dunk,
+      style,
+      moveName: dunk ? MOVE_NAMES[style] || 'SLAM!' : '',
       score: shooter.score,
       x: HOOP.x,
       y: HOOP.rimY,
@@ -825,6 +1037,9 @@ export class PixelHoopsEngine {
         z: r(p.z),
         yaw: r(p.yaw),
         action: p.action,
+        move: p.move,
+        actionP: p.actionDur > 0 ? r(clamp((this.roundTime - p.actionStart) / p.actionDur, 0, 1), 2) : 0,
+        ballHand: p.ballHand,
         hasBall: this.ball.ownerId === p.id && (this.ball.state === 'held' || this.ball.state === 'dunk'),
         onOffense: this.offenseId === p.id,
         animPhase: r(p.animPhase, 2),

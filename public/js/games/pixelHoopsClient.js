@@ -700,20 +700,20 @@ export class PixelHoopsClient {
     }
   }
 
-  _popup(text, color, x, y, z) {
-    const tex = canvasTexture(128, 32, (ctx) => {
-      const scale = pixelTextWidth(text, 3) <= 120 ? 3 : 2;
+  _popup(text, color, x, y, z, size = 1) {
+    const tex = canvasTexture(192, 32, (ctx) => {
+      const scale = pixelTextWidth(text, 3) <= 182 ? 3 : 2;
       // Thick arcade outline: stamp the text in black around itself.
       for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [2, 2]]) {
-        drawPixelTextCentered(ctx, text, 64 + ox * scale, 16 + oy * scale, scale, '#0b0b14');
+        drawPixelTextCentered(ctx, text, 96 + ox * scale, 16 + oy * scale, scale, '#0b0b14');
       }
-      drawPixelTextCentered(ctx, text, 64, 16, scale, color);
+      drawPixelTextCentered(ctx, text, 96, 16, scale, color);
     }, { smooth: false });
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     sprite.position.set(x, y, z);
-    sprite.scale.set(1.8, 0.45, 1);
+    sprite.scale.set(2.7 * size, 0.45 * size, 1);
     this.group.add(sprite);
-    this.popups.push({ sprite, life: 1.3 });
+    this.popups.push({ sprite, life: size < 1 ? 0.9 : 1.3 });
   }
 
   applyState(state) {
@@ -771,13 +771,19 @@ export class PixelHoopsClient {
         case 'score': {
           this.netShake = 1;
           this._burst(hoop.x, hoop.rimY - 0.2, hoop.z, ev.color, ev.dunk ? 24 : 14, 2.4);
-          this._popup(ev.dunk ? 'SLAM!' : ev.points === 3 ? '3 PTS!' : '2 PTS', ev.color, hoop.x, hoop.rimY + 0.7, hoop.z + 0.4);
+          this._popup(ev.dunk ? ev.moveName || 'SLAM!' : ev.points === 3 ? '3 PTS!' : '2 PTS', ev.color, hoop.x, hoop.rimY + 0.7, hoop.z + 0.4);
           sfx.swish();
           if (ev.dunk) sfx.slam();
           else if (ev.points === 3) sfx.three();
           else sfx.two();
           break;
         }
+        case 'move':
+          // Name the move over the player's head (dunk names show on the score).
+          if (!['power', 'tomahawk', 'windmill', 'reverse'].includes(ev.move)) {
+            this._popup(ev.name, '#7dd3fc', ev.x, (ev.y || 0) + 1.9, ev.z, 0.75);
+          }
+          break;
         case 'rim_shake':
           this.rimShake = 1;
           break;
@@ -867,6 +873,23 @@ export class PixelHoopsClient {
     if (p.hasBall && !air) { crouch = 0.35; lean += 0.1; }
     if (onDefense && !air && p.action !== 'steal') { crouch = 0.8; spread = 0.22; lean = 0.18; }
     if (p.action === 'stumble') lean = 0.35 + Math.sin(time * 25) * 0.08;
+    const prog = p.actionP || 0;
+    if (p.action === 'shoot' && p.move === 'fadeaway') lean = -0.35;
+    if (p.action === 'layup') {
+      // Knee drive off one foot.
+      legs.L = { hip: -1.25, knee: 1.5 };
+      legs.R = { hip: 0.2, knee: 0.3 };
+    }
+    if (p.action === 'dunk' && (p.move === 'tomahawk' || p.move === 'windmill')) {
+      legs.L = { hip: -1.0, knee: 1.6 };
+      legs.R = { hip: 0.35, knee: 1.1 };
+      lean = p.move === 'tomahawk' ? (prog < 0.6 ? -0.25 : 0.25) : 0.1;
+    }
+    if (p.action === 'dunk' && p.move === 'reverse') lean = -0.3;
+    if (p.action === 'pumpfake') { crouch = 0.25; lean = -0.05; }
+    if (p.action === 'crossover') { crouch = 0.6; lean = 0.25; }
+    if (p.action === 'spin') { crouch = 0.4; lean = 0.15; }
+    vis.spin = p.action === 'spin' ? prog * Math.PI * 2 * (p.ballHand < 0 ? -1 : 1) : 0;
 
     const bend = crouch * 0.55;
     for (const [key, leg] of [['L', vis.legL], ['R', vis.legR]]) {
@@ -887,12 +910,51 @@ export class PixelHoopsClient {
     const wave = Math.sin(time * 16);
     switch (p.action) {
       case 'shoot':
-        L = [-2.35, 0.25, -0.9];
-        R = [-2.55, 0.1, -1.0];
+        if (p.move === 'hook') {
+          // Ball arm swept up over the head, off arm out to shield the defender.
+          const sweep = Math.min(1, prog * 2.2);
+          const ballArm = [-0.3 - sweep * 0.2, 0.6 + sweep * 2.2, -0.15];
+          const offArm = [-1.2, 1.1, -0.6];
+          if (p.ballHand < 0) { R = ballArm; L = offArm; } else { L = ballArm; R = offArm; }
+        } else {
+          L = [-2.35, 0.25, -0.9];
+          R = [-2.55, 0.1, -1.0];
+        }
+        break;
+      case 'layup':
+        R = [-2.6 - prog * 0.3, 0.1, -0.15];
+        L = [-0.9, 0.5, -0.6];
         break;
       case 'dunk':
-        L = [-2.4, 0.35, -0.2];
-        R = [-3.0, 0.05, -0.1];
+        if (p.move === 'windmill') {
+          // Ball arm makes a full circle; matches the engine's ball path.
+          const a = prog * Math.PI * 2 + Math.PI / 2;
+          R = [-(a + Math.PI / 2), 0.15, -0.05];
+          L = [-1.6, 0.7, -0.3];
+        } else if (p.move === 'tomahawk') {
+          R = prog < 0.6 ? [-3.5, 0.1, -1.6] : [-3.5 + (prog - 0.6) * 3.2, 0.1, -1.6 + (prog - 0.6) * 3.6];
+          L = [-1.4, 0.6, -0.4];
+        } else if (p.move === 'reverse') {
+          L = [-3.3, 0.2, -0.1];
+          R = [-3.3, 0.2, -0.1];
+        } else {
+          L = [-2.9, 0.15, -0.2];
+          R = [-2.9, 0.15, -0.2];
+        }
+        break;
+      case 'pumpfake': {
+        const up = Math.sin(prog * Math.PI);
+        L = [-0.9 - up * 1.4, 0.2, -1.2 + up * 0.5];
+        R = [-0.9 - up * 1.4, 0.2, -1.2 + up * 0.5];
+        break;
+      }
+      case 'crossover':
+        L = [-0.5, 0.5, -0.5];
+        R = [-0.5, 0.5, -0.5];
+        break;
+      case 'spin':
+        L = [-0.5, 0.9, -0.6];
+        R = [-0.5, 0.9, -0.6];
         break;
       case 'block':
         L = [-3.0, 0.25, 0];
@@ -913,8 +975,9 @@ export class PixelHoopsClient {
       default:
         if (p.hasBall) {
           const bounce = Math.abs(Math.sin(ph * 1.6));
-          R = [-0.55 + bounce * 0.35, 0.25, -0.75 + bounce * 0.3];
-          L = [-0.95, 0.55, -0.9];
+          const dribble = [-0.55 + bounce * 0.35, 0.25, -0.75 + bounce * 0.3];
+          const guard = [-0.95, 0.55, -0.9];
+          if (p.ballHand < 0) { R = dribble; L = guard; } else { L = dribble; R = guard; }
         } else if (onDefense) {
           const shuffle = running ? Math.sin(ph) * 0.1 : 0;
           L = [-0.35, 1.15 + shuffle, -0.5];
@@ -929,7 +992,7 @@ export class PixelHoopsClient {
     vis.armL.elbow.rotation.x = L[2];
     vis.armR.shoulder.rotation.set(R[0], 0, -R[1]);
     vis.armR.elbow.rotation.x = R[2];
-    vis.head.rotation.x = -lean * 0.8 + (p.action === 'shoot' || p.action === 'dunk' ? -0.25 : 0);
+    vis.head.rotation.x = -lean * 0.8 + (['shoot', 'dunk', 'layup', 'pumpfake'].includes(p.action) ? -0.25 : 0);
   }
 
   update(dt) {
@@ -939,10 +1002,12 @@ export class PixelHoopsClient {
       vis.root.position.x += (vis.targetX - vis.root.position.x) * smooth;
       vis.root.position.z += (vis.targetZ - vis.root.position.z) * smooth;
       vis.body.position.y += (vis.targetY - vis.body.position.y) * smooth;
-      let diff = vis.targetYaw - vis.body.rotation.y;
+      if (vis.yaw === undefined) vis.yaw = vis.targetYaw;
+      let diff = vis.targetYaw - vis.yaw;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
-      vis.body.rotation.y += diff * smooth;
+      vis.yaw += diff * smooth;
+      vis.body.rotation.y = vis.yaw + (vis.spin || 0);
       vis.shadow.scale.setScalar(Math.max(0.45, 1 - vis.body.position.y * 0.3));
       this._animateBaller(vis, dt, time);
     }
