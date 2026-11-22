@@ -15,7 +15,7 @@ const HALF_W = COURT_WIDTH / 2;
 const HALF_D = COURT_DEPTH / 2;
 
 // Hoop sits near the far (-Z) baseline, facing +Z.
-export const HOOP = { x: 0, z: -HALF_D + 0.95, rimY: 1.75, rimRadius: 0.27 };
+export const HOOP = { x: 0, z: -HALF_D + 0.95, rimY: 2.25, rimRadius: 0.27 };
 export const BACKBOARD_Z = HOOP.z - 0.38;
 export const THREE_PT_RADIUS = 3.6;
 export const CHECK_SPOT = { x: 0, z: HOOP.z + 4.6 };
@@ -676,7 +676,7 @@ export class PixelHoopsEngine {
     p.action = 'dunk';
     p.moveVariant = dunkStyle;
     p.moveProgress = 0;
-    p.vy = 6.8;
+    p.vy = 7.6;
     p.grounded = false;
     const dx = HOOP.x - p.x;
     const dz = HOOP.z + 0.18 - p.z;

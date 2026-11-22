@@ -34,9 +34,11 @@ const els = {
   arStatusText: document.getElementById('arStatusText'),
   motionBtn: document.getElementById('motionBtn'),
   lockBtn: document.getElementById('lockBtn'),
+  replaceBtn: document.getElementById('replaceBtn'),
   modeBtn: document.getElementById('modeBtn'),
   menuBtn: document.getElementById('menuBtn'),
   fullscreenBtn: document.getElementById('fullscreenBtn'),
+  lobbyFullscreenBtn: document.getElementById('lobbyFullscreenBtn'),
   homeScreenTip: document.getElementById('homeScreenTip'),
   homeScreenTipClose: document.getElementById('homeScreenTipClose'),
   scaleSlider: document.getElementById('scaleSlider'),
@@ -204,6 +206,7 @@ const arTracker = new ARTracker({
     els.lockBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
     els.lockBtn.textContent = status.locked ? 'Unlock' : 'Lock';
     els.lockBtn.classList.toggle('active', Boolean(status.locked));
+    els.replaceBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
 
     const showPrompt = status.mode === 'ar' && !status.anchored;
     els.anchorPrompt.classList.toggle('hidden', !showPrompt);
@@ -320,6 +323,14 @@ function renderLobby() {
   els.hostControls.classList.toggle('hidden', !host);
   els.guestNotice.classList.toggle('hidden', host);
   els.closeLobbyBtn.classList.toggle('hidden', !hostMeta.inGame);
+
+  const activeDiff = hostMeta.botDifficulty || 'medium';
+  els.difficultySection.classList.toggle('hidden', hostMeta.selectedGameId !== 'pixel-hoops');
+  for (const btn of els.difficultyGroup.querySelectorAll('.diff-btn')) {
+    const level = btn.dataset.difficulty;
+    btn.classList.toggle('active', level === activeDiff);
+    btn.disabled = !host;
+  }
 
   els.gameGrid.innerHTML = '';
   for (const game of GAME_CATALOG) {
@@ -651,43 +662,69 @@ function autoFullscreen() {
   if (!fullscreenOptOut) enterFullscreen();
 }
 
-function updateFullscreenBtn() {
+function updateFullscreenBtns() {
   const on = isFullscreen();
-  els.fullscreenBtn.textContent = on ? '⤡' : '⤢';
-  els.fullscreenBtn.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
-  els.fullscreenBtn.title = on ? 'Exit full screen' : 'Full screen';
+  const label = on ? 'Exit Full' : 'Fullscreen';
+  for (const btn of [els.fullscreenBtn, els.lobbyFullscreenBtn]) {
+    if (!btn) continue;
+    btn.textContent = label;
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('aria-label', on ? 'Exit fullscreen' : 'Enter fullscreen');
+    btn.title = on ? 'Exit fullscreen' : 'Enter fullscreen';
+  }
+}
+
+function showHomeScreenTip(force = false) {
+  if (!force) {
+    if (isFullscreenSupported() || isStandaloneApp() || !isIOS()) return;
+    try {
+      if (localStorage.getItem(HOME_TIP_KEY)) return;
+      localStorage.setItem(HOME_TIP_KEY, '1');
+    } catch { /* storage unavailable: still show once this session */ }
+  }
+  els.homeScreenTip.classList.remove('hidden');
+  clearTimeout(showHomeScreenTip._t);
+  showHomeScreenTip._t = setTimeout(() => els.homeScreenTip.classList.add('hidden'), 9000);
 }
 
 function maybeShowHomeScreenTip() {
-  // iPhone browsers can't hide the address bar from a web page; only a
-  // Home Screen launch runs truly full screen.
-  if (isFullscreenSupported() || isStandaloneApp() || !isIOS()) return;
-  try {
-    if (localStorage.getItem(HOME_TIP_KEY)) return;
-    localStorage.setItem(HOME_TIP_KEY, '1');
-  } catch { /* storage unavailable: still show once this session */ }
-  els.homeScreenTip.classList.remove('hidden');
-  setTimeout(() => els.homeScreenTip.classList.add('hidden'), 9000);
+  showHomeScreenTip(false);
 }
 
-if (isFullscreenSupported() && !isStandaloneApp()) {
-  els.fullscreenBtn.style.display = '';
-  updateFullscreenBtn();
-  onFullscreenChange(updateFullscreenBtn);
-  els.fullscreenBtn.addEventListener('click', () => {
+async function toggleFullscreen() {
+  if (isFullscreenSupported()) {
     if (isFullscreen()) {
       fullscreenOptOut = true;
-      exitFullscreen();
+      await exitFullscreen();
     } else {
       fullscreenOptOut = false;
-      enterFullscreen();
+      const ok = await enterFullscreen();
+      if (!ok) showHomeScreenTip(true);
     }
-  });
-  // Guests get the match start over the network (no tap), so go full screen
-  // on their first touch of the game controls.
-  els.touchOverlay.addEventListener('pointerdown', () => {
-    if (!isFullscreen()) autoFullscreen();
-  }, true);
+    updateFullscreenBtns();
+  } else {
+    // iOS Safari/Chrome blocks the Fullscreen API; nudge scroll & show Home Screen tip.
+    window.scrollTo(0, 1);
+    showHomeScreenTip(true);
+  }
+}
+
+if (isStandaloneApp()) {
+  els.fullscreenBtn.style.display = 'none';
+  if (els.lobbyFullscreenBtn) els.lobbyFullscreenBtn.style.display = 'none';
+} else {
+  updateFullscreenBtns();
+  onFullscreenChange(updateFullscreenBtns);
+  els.fullscreenBtn.addEventListener('click', toggleFullscreen);
+  if (els.lobbyFullscreenBtn) els.lobbyFullscreenBtn.addEventListener('click', toggleFullscreen);
+  if (isFullscreenSupported()) {
+    // Guests get the match start over the network (no tap), so go full screen
+    // on their first touch of the game controls.
+    els.touchOverlay.addEventListener('pointerdown', () => {
+      if (!isFullscreen()) autoFullscreen();
+    }, true);
+  }
 }
 
 els.homeScreenTipClose.addEventListener('click', () => {
@@ -717,7 +754,9 @@ els.difficultyGroup.addEventListener('click', (e) => {
   const level = btn.dataset.difficulty;
   if (!level) return;
   try { localStorage.setItem(BOT_DIFFICULTY_KEY, level); } catch {}
+  hostMeta = { ...hostMeta, botDifficulty: level };
   hostController.setBotDifficulty(level);
+  renderLobby();
 });
 
 els.nextRoundBtn.addEventListener('click', () => {
@@ -753,6 +792,11 @@ els.closeLobbyBtn.addEventListener('click', () => {
 els.lockBtn.addEventListener('click', () => {
   arTracker.requestMotionPermission();
   arTracker.setLocked(!arTracker.locked);
+});
+
+els.replaceBtn.addEventListener('click', () => {
+  arTracker.requestMotionPermission();
+  arTracker.replaceBoard();
 });
 
 els.modeBtn.addEventListener('click', async () => {

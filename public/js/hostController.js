@@ -97,12 +97,13 @@ export class HostController {
   }
 
   setBotDifficulty(level) {
-    if (!this.active) return;
     this.botDifficulty = normalizeBotDifficulty(level);
     if (this.activeEngine?.setBotDifficulty) {
       this.activeEngine.setBotDifficulty(this.botDifficulty);
     }
-    this._broadcastHostMeta();
+    if (this.active) {
+      this._broadcastHostMeta();
+    }
   }
 
   addBot() {
