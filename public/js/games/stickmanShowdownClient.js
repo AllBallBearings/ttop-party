@@ -767,11 +767,14 @@ export class StickmanShowdownClient {
         trail.position.z = -0.25;
         const container = new THREE.Group();
         container.add(bolt, trail);
-        container.rotation.y = Math.atan2(b.vx, b.vz);
+        container.rotation.order = 'YXZ';
         this.group.add(container);
         bv = { container };
         this.bulletVisuals.set(b.id, bv);
       }
+      const horiz = Math.hypot(b.vx, b.vz) || 1;
+      bv.container.rotation.y = Math.atan2(b.vx, b.vz);
+      bv.container.rotation.x = -Math.atan2(b.vy || 0, horiz);
       bv.container.position.set(b.x, b.y, b.z);
     }
 
@@ -933,9 +936,10 @@ export class StickmanShowdownClient {
       }
     }
 
-    // Weapon kickback & recoil bounce
-    vis.gunPivot.rotation.set(-gunKick * 0.72, 0, gunKick * 0.12);
-    vis.gunPivot.position.set(-0.04, 0.05 + gunKick * 0.06, 0.28 - gunKick * 0.11);
+    // Weapon kickback & recoil barrel climb synced to authoritative bullet pitch
+    const totalPitch = (p.recoilPitch || 0) + gunKick * 0.25;
+    vis.gunPivot.rotation.set(-totalPitch, 0, gunKick * 0.12);
+    vis.gunPivot.position.set(-0.04, 0.05 + Math.sin(totalPitch) * 0.12, 0.28 - gunKick * 0.1);
 
     // Floppy multi-jointed legs (Stick-Fight noodle gait & midair flail!)
     const ph = p.animPhase || 0;
@@ -965,11 +969,11 @@ export class StickmanShowdownClient {
 
     // Floppy multi-jointed arms
     if (p.hasGun) {
-      const aimLift = -1.32 - gunKick * 0.65;
+      const aimLift = -1.32 - totalPitch;
       vis.leftArm.shoulder.rotation.set(aimLift, 0.25, 0.18);
-      vis.leftArm.elbow.rotation.x = -0.35 - gunKick * 0.35;
+      vis.leftArm.elbow.rotation.x = -0.35 - gunKick * 0.25;
       vis.rightArm.shoulder.rotation.set(aimLift, -0.22, -0.15);
-      vis.rightArm.elbow.rotation.x = -0.3 - gunKick * 0.35;
+      vis.rightArm.elbow.rotation.x = -0.3 - gunKick * 0.25;
     } else if (air) {
       // Wild Stick-Fight midair arm flailing!
       const w = Math.sin(time * 24);
