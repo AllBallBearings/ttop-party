@@ -33,6 +33,10 @@ const BULLET_DAMAGE = 25;
 // Impactful Stick-Fight-style weapon recoil & bullet knockback impulses
 const PISTOL_RECOIL = 3.4;
 const RAPID_RECOIL = 2.6;
+const PISTOL_PITCH_KICK = 0.32;
+const RAPID_PITCH_KICK = 0.22;
+const MAX_RECOIL_PITCH = 0.85; // ~49 deg upward barrel climb
+const RECOIL_PITCH_RECOVERY = 0.85; // rad/s return to level
 const HIT_KNOCKBACK = 6.2;
 
 export const OBSTACLES = [
@@ -247,6 +251,7 @@ export class StickmanShowdownEngine {
         knockVx: 0,
         knockVz: 0,
         recoilKick: 0,
+        recoilPitch: 0,
         yaw: sp.yaw,
         hp: 100,
         maxHp: 100,
@@ -300,6 +305,7 @@ export class StickmanShowdownEngine {
       knockVx: 0,
       knockVz: 0,
       recoilKick: 0,
+      recoilPitch: 0,
       yaw: sp.yaw,
       hp: 100,
       maxHp: 100,
@@ -396,7 +402,7 @@ export class StickmanShowdownEngine {
 
         const desiredYaw = Math.atan2(targetX - bot.x, targetZ - bot.z);
         const diff = normalizeAngle(desiredYaw - bot.yaw);
-        if (Math.abs(diff) < 0.24 && bot.hasGun && bestDist < 10.5) {
+        if (Math.abs(diff) < 0.24 && bot.hasGun && bestDist < 10.5 && (bot.recoilPitch || 0) < 0.22) {
           wantShoot = true;
         }
       }
@@ -479,6 +485,7 @@ export class StickmanShowdownEngine {
       if (p.hitFlash > 0) p.hitFlash = Math.max(0, p.hitFlash - dt);
       if (p.shootCooldown > 0) p.shootCooldown = Math.max(0, p.shootCooldown - dt);
       if (p.recoilKick > 0) p.recoilKick = Math.max(0, p.recoilKick - dt * 5.5);
+      if (p.recoilPitch > 0) p.recoilPitch = Math.max(0, p.recoilPitch - dt * RECOIL_PITCH_RECOVERY);
 
       if (this.phase === 'dropping') {
         p.vy -= GRAVITY * 0.75 * dt;
@@ -642,11 +649,16 @@ export class StickmanShowdownEngine {
         const dirX = Math.sin(shotYaw);
         const dirZ = Math.cos(shotYaw);
 
-        const muzzleX = p.x + fwdX * 0.52;
-        const muzzleY = p.y + BULLET_HEIGHT;
-        const muzzleZ = p.z + fwdZ * 0.52;
+        // Bullets launch at the gun's actual upward recoil pitch angle!
+        const shotPitch = p.recoilPitch || 0;
+        const cosP = Math.cos(shotPitch);
+        const sinP = Math.sin(shotPitch);
 
-        // Apply real weapon recoil impulse to the shooter!
+        const muzzleX = p.x + fwdX * (0.48 * cosP + 0.06);
+        const muzzleY = p.y + BULLET_HEIGHT + sinP * 0.36;
+        const muzzleZ = p.z + fwdZ * (0.48 * cosP + 0.06);
+
+        // Apply real weapon recoil impulse & upward barrel climb to the shooter!
         const recoil = isRapid ? RAPID_RECOIL : PISTOL_RECOIL;
         p.knockVx = clamp(p.knockVx - dirX * recoil, -9.0, 9.0);
         p.knockVz = clamp(p.knockVz - dirZ * recoil, -9.0, 9.0);
@@ -654,6 +666,10 @@ export class StickmanShowdownEngine {
           p.vy = Math.min(p.vy + (isRapid ? 0.85 : 1.1), 5.5);
         }
         p.recoilKick = isRapid ? 0.9 : 1.0;
+        p.recoilPitch = Math.min(
+          MAX_RECOIL_PITCH,
+          p.recoilPitch + (isRapid ? RAPID_PITCH_KICK : PISTOL_PITCH_KICK)
+        );
 
         this.bullets.push({
           id: `b-${this.nextEntityId++}`,
@@ -663,8 +679,9 @@ export class StickmanShowdownEngine {
           x: muzzleX,
           y: muzzleY,
           z: muzzleZ,
-          vx: dirX * BULLET_SPEED,
-          vz: dirZ * BULLET_SPEED,
+          vx: dirX * cosP * BULLET_SPEED,
+          vy: sinP * BULLET_SPEED,
+          vz: dirZ * cosP * BULLET_SPEED,
           life: 1.35,
         });
 
@@ -673,6 +690,7 @@ export class StickmanShowdownEngine {
           playerId: p.id,
           weaponType: p.weaponType,
           recoil,
+          pitch: Number(shotPitch.toFixed(2)),
           x: muzzleX,
           y: muzzleY,
           z: muzzleZ,
@@ -685,10 +703,11 @@ export class StickmanShowdownEngine {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       b.x += b.vx * dt;
+      b.y += (b.vy || 0) * dt;
       b.z += b.vz * dt;
       b.life -= dt;
 
-      if (b.life <= 0 || Math.abs(b.x) > HALF_W + 0.3 || Math.abs(b.z) > HALF_D + 0.3) {
+      if (b.life <= 0 || Math.abs(b.x) > HALF_W + 0.3 || Math.abs(b.z) > HALF_D + 0.3 || b.y > 7.5 || b.y < 0.02) {
         this.bullets.splice(i, 1);
         continue;
       }
@@ -862,6 +881,7 @@ export class StickmanShowdownEngine {
         hasGun: p.hasGun,
         weaponType: p.weaponType,
         recoilKick: Number(p.recoilKick.toFixed(2)),
+        recoilPitch: Number((p.recoilPitch || 0).toFixed(2)),
         hitFlash: Number(p.hitFlash.toFixed(2)),
         animPhase: Number(p.animPhase.toFixed(2)),
         kills: p.kills,
@@ -892,6 +912,7 @@ export class StickmanShowdownEngine {
         y: Number(b.y.toFixed(2)),
         z: Number(b.z.toFixed(2)),
         vx: Number(b.vx.toFixed(2)),
+        vy: Number((b.vy || 0).toFixed(2)),
         vz: Number(b.vz.toFixed(2)),
       })),
       events: this.events,

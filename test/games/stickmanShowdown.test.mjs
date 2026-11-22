@@ -99,6 +99,39 @@ test('bullets chip away and eventually destroy barrier chunks so shots pass thro
   assert.ok(state.chunkHps.some((hp) => hp === 0), 'destroyed chunk has 0 hp in state.chunkHps');
 });
 
+test('consecutive recoil shots pitch the gun upward and fire bullets into the air', () => {
+  const e = new StickmanShowdownEngine(
+    [{ id: 'p1', name: 'P1', color: '#f00' }, { id: 'p2', name: 'P2', color: '#00f' }],
+    {},
+    seeded(3)
+  );
+  advancePastDrop(e);
+
+  const p1 = e.players.get('p1');
+  p1.x = 0;
+  p1.z = 0;
+  p1.y = 0;
+  p1.grounded = true;
+  p1.yaw = 0;
+  p1.hasGun = true;
+  p1.weaponType = 'rapid';
+
+  let upwardBullet = null;
+  for (let i = 0; i < 20; i++) {
+    e.handleInput('p1', { moveX: 0, moveZ: 0, shoot: true, jump: false });
+    e.tick(1 / 30);
+    const pitched = e.getState().bullets.find((b) => b.vy > 1.0);
+    if (pitched) upwardBullet = pitched;
+  }
+
+  assert.ok(p1.recoilPitch > 0.15, `expected recoilPitch > 0.15, got ${p1.recoilPitch}`);
+  assert.ok(upwardBullet, 'expected recoil-pitched bullet with vy > 1.0');
+  const startY = upwardBullet.y;
+  for (let i = 0; i < 4; i++) e.tick(1 / 30);
+  const later = e.getState().bullets.find((b) => b.id === upwardBullet.id);
+  assert.ok(later && later.y > startY + 0.15, `expected bullet to climb in air from ${startY}`);
+});
+
 test('bot vs bot stickman match completes with knockback and a winner', () => {
   let winner = null;
   const e = new StickmanShowdownEngine(
