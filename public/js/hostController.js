@@ -1,5 +1,5 @@
 import { StickmanShowdownEngine } from './shared/stickmanShowdownEngine.js';
-import { PixelHoopsEngine } from './shared/pixelHoopsEngine.js';
+import { PixelHoopsEngine, normalizeBotDifficulty } from './shared/pixelHoopsEngine.js';
 import { getGameDefinition } from './shared/gameCatalog.js';
 
 const BOT_COLORS = [
@@ -14,7 +14,7 @@ const BOT_COLORS = [
 ];
 
 export class HostController {
-  constructor({ sendRelay, onLocalGameStarted, onLocalState, onLocalReturnedLobby, onHostRosterChange }) {
+  constructor({ sendRelay, onLocalGameStarted, onLocalState, onLocalReturnedLobby, onHostRosterChange, initialBotDifficulty = 'medium' }) {
     this.sendRelay = sendRelay;
     this.onLocalGameStarted = onLocalGameStarted;
     this.onLocalState = onLocalState;
@@ -23,6 +23,7 @@ export class HostController {
 
     this.active = false;
     this.selectedGameId = 'stickman-showdown';
+    this.botDifficulty = normalizeBotDifficulty(initialBotDifficulty);
     this.humanPlayers = [];
     this.bots = [];
     this.botCounter = 0;
@@ -95,6 +96,15 @@ export class HostController {
     this._broadcastHostMeta();
   }
 
+  setBotDifficulty(level) {
+    if (!this.active) return;
+    this.botDifficulty = normalizeBotDifficulty(level);
+    if (this.activeEngine?.setBotDifficulty) {
+      this.activeEngine.setBotDifficulty(this.botDifficulty);
+    }
+    this._broadcastHostMeta();
+  }
+
   addBot() {
     if (!this.active) return;
     if (this.humanPlayers.length + this.bots.length >= 8) return;
@@ -145,7 +155,7 @@ export class HostController {
       },
     };
     this.activeEngine = def.id === 'pixel-hoops'
-      ? new PixelHoopsEngine(this._hoopsLineup(roster), callbacks)
+      ? new PixelHoopsEngine(this._hoopsLineup(roster), callbacks, Math.random, { botDifficulty: this.botDifficulty })
       : new StickmanShowdownEngine(roster, callbacks);
 
     const startPayload = {
@@ -224,6 +234,7 @@ export class HostController {
     const meta = {
       type: 'host_meta',
       selectedGameId: this.selectedGameId,
+      botDifficulty: this.botDifficulty,
       inGame: Boolean(this.activeEngine),
       bots: this.bots,
       wins: Object.fromEntries(this.winsById.entries()),

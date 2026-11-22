@@ -59,16 +59,95 @@ function blankInput() {
   return { moveX: 0, moveZ: 0, jump: false, shoot: false };
 }
 
+export const BOT_DIFFICULTIES = ['easy', 'medium', 'hard'];
+export const DEFAULT_BOT_DIFFICULTY = 'medium';
+export const DUNK_STYLES = ['tomahawk', 'windmill', 'twohand', 'cradle'];
+
+export function normalizeBotDifficulty(level) {
+  const key = String(level || '').toLowerCase();
+  return BOT_DIFFICULTIES.includes(key) ? key : DEFAULT_BOT_DIFFICULTY;
+}
+
+const BOT_PROFILES = {
+  easy: {
+    speedScale: 0.78,
+    decideMin: 0.85,
+    decideMax: 1.45,
+    weaveFlip: 0.25,
+    releaseVySpread: 3.3,
+    shotBias: -0.1,
+    dunkRangeMult: 0.88,
+    dunkAggression: 0.02,
+    dunkGap: 0.9,
+    jumperOpenChance: 0.045,
+    jumperContestedChance: 0.015,
+    fadeawayChance: 0.05,
+    jukeChance: 0.018,
+    defGap: 1.25,
+    stealChance: 0.012,
+    blockDelayMin: 0.34,
+    blockDelayMax: 0.56,
+    blockRange: 1.35,
+    reboundScale: 0.72,
+  },
+  medium: {
+    speedScale: 0.94,
+    decideMin: 0.48,
+    decideMax: 0.85,
+    weaveFlip: 0.42,
+    releaseVySpread: 1.8,
+    shotBias: 0.0,
+    dunkRangeMult: 0.96,
+    dunkAggression: 0.045,
+    dunkGap: 0.7,
+    jumperOpenChance: 0.06,
+    jumperContestedChance: 0.014,
+    fadeawayChance: 0.22,
+    jukeChance: 0.07,
+    defGap: 0.85,
+    stealChance: 0.036,
+    blockDelayMin: 0.14,
+    blockDelayMax: 0.28,
+    blockRange: 1.65,
+    reboundScale: 0.94,
+  },
+  hard: {
+    speedScale: 1.0,
+    decideMin: 0.22,
+    decideMax: 0.46,
+    weaveFlip: 0.58,
+    releaseVySpread: 0.55,
+    shotBias: 0.09,
+    dunkRangeMult: 1.0,
+    dunkAggression: 0.14,
+    dunkGap: 0.55,
+    jumperOpenChance: 0.095,
+    jumperContestedChance: 0.025,
+    fadeawayChance: 0.55,
+    jukeChance: 0.16,
+    defGap: 0.62,
+    stealChance: 0.075,
+    blockDelayMin: 0.04,
+    blockDelayMax: 0.13,
+    blockRange: 1.9,
+    reboundScale: 1.0,
+  },
+};
+
 export class PixelHoopsEngine {
   /**
    * @param roster all players in the room; the first two play, the rest wait.
    * @param callbacks { onRoundWin(winnerId) }
    * @param rng optional deterministic random source (tests)
+   * @param options { botDifficulty?: 'easy' | 'medium' | 'hard' }
    */
-  constructor(roster, callbacks = {}, rng = Math.random) {
+  constructor(roster, callbacks = {}, rng = Math.random, options = {}) {
     this.id = 'pixel-hoops';
     this.callbacks = callbacks;
     this.rng = rng;
+    this.botDifficulty = normalizeBotDifficulty(
+      options?.botDifficulty ?? options?.difficulty ?? callbacks?.botDifficulty ?? callbacks?.difficulty
+    );
     this.players = new Map();
     this.events = [];
     this.roundTime = 0;
@@ -92,6 +171,15 @@ export class PixelHoopsEngine {
     this.events.push({ type: 'round_start' });
   }
 
+  setBotDifficulty(level) {
+    this.botDifficulty = normalizeBotDifficulty(level);
+  }
+
+  _botProfile(bot) {
+    const level = bot.botDifficulty ? normalizeBotDifficulty(bot.botDifficulty) : this.botDifficulty;
+    return BOT_PROFILES[level] || BOT_PROFILES.medium;
+  }
+
   // ---------------------------------------------------------------- roster
 
   _addPlayer(p, role) {
@@ -101,6 +189,7 @@ export class PixelHoopsEngine {
       name: p.name,
       color: p.color,
       isBot: !!p.isBot,
+      botDifficulty: p.botDifficulty ? normalizeBotDifficulty(p.botDifficulty) : null,
       role,
       score: 0,
       x: role === 'bench' ? -HALF_W + 0.6 + benchIndex * 0.8 : 0,
@@ -112,9 +201,14 @@ export class PixelHoopsEngine {
       yaw: Math.PI,
       grounded: true,
       animPhase: 0,
-      action: 'idle', // idle | dribble | shoot | dunk | block | steal | stumble | celebrate
+      action: 'idle', // idle | dribble | crossover | spin | shoot | dunk | block | steal | stumble | celebrate
       actionTimer: 0,
+      dribbleHand: 1, // 1 = right, -1 = left
+      moveVariant: '', // crossover | spin | fadeaway | tomahawk | windmill | twohand | cradle
+      moveProgress: 0, // 0..1 progress through spin / crossover / dunk
+      shotReleaseTimer: 0, // gooseneck follow-through pose after shot release
       jukeTimer: 0,
+      jukeDuration: JUKE_TIME,
       jukeCooldown: 0,
       jukeX: 0,
       jukeZ: 0,
@@ -124,7 +218,7 @@ export class PixelHoopsEngine {
       prevJump: false,
       prevShoot: false,
       input: blankInput(),
-      bot: { reaction: 0, decide: 0, weave: this.rng() < 0.5 ? 1 : -1, holdUntil: 0 },
+      bot: { reaction: 0, decide: 0, weave: this.rng() < 0.5 ? 1 : -1, holdUntil: 0, releaseVy: 0 },
     });
   }
 
@@ -194,10 +288,16 @@ export class PixelHoopsEngine {
     const off = this.players.get(offenseId);
     const def = off ? this._opponentOf(off.id) : null;
     if (off) {
-      Object.assign(off, { x: CHECK_SPOT.x, z: CHECK_SPOT.z, y: 0, vx: 0, vy: 0, vz: 0, yaw: Math.PI, grounded: true, action: 'dribble', actionTimer: 0, shootHeld: false });
+      Object.assign(off, {
+        x: CHECK_SPOT.x, z: CHECK_SPOT.z, y: 0, vx: 0, vy: 0, vz: 0, yaw: Math.PI, grounded: true,
+        action: 'dribble', actionTimer: 0, shootHeld: false, moveVariant: '', moveProgress: 0, shotReleaseTimer: 0, jukeTimer: 0,
+      });
     }
     if (def) {
-      Object.assign(def, { x: CHECK_SPOT.x, z: CHECK_SPOT.z - 1.3, y: 0, vx: 0, vy: 0, vz: 0, yaw: 0, grounded: true, action: 'idle', actionTimer: 0, shootHeld: false });
+      Object.assign(def, {
+        x: CHECK_SPOT.x, z: CHECK_SPOT.z - 1.3, y: 0, vx: 0, vy: 0, vz: 0, yaw: 0, grounded: true,
+        action: 'idle', actionTimer: 0, shootHeld: false, moveVariant: '', moveProgress: 0, shotReleaseTimer: 0, jukeTimer: 0,
+      });
     }
     this.ball.state = 'held';
     this.ball.ownerId = offenseId;
@@ -212,21 +312,24 @@ export class PixelHoopsEngine {
     this.ball.ownerId = newOwner.id;
     this.ball.flight = null;
     newOwner.action = 'dribble';
+    newOwner.moveVariant = '';
+    newOwner.moveProgress = 0;
   }
 
   // ---------------------------------------------------------------- bots
 
   _botInput(bot, dt) {
     const b = bot.bot;
+    const prof = this._botProfile(bot);
     const opp = this._opponentOf(bot.id);
     const input = blankInput();
     b.decide -= dt;
     if (b.decide <= 0) {
-      b.decide = 0.5 + this.rng() * 0.8;
-      if (this.rng() < 0.4) b.weave *= -1;
+      b.decide = prof.decideMin + this.rng() * (prof.decideMax - prof.decideMin);
+      if (this.rng() < prof.weaveFlip) b.weave *= -1;
     }
     const hasBall = this.ball.state === 'held' && this.ball.ownerId === bot.id;
-    const toward = (tx, tz, scale = 1) => {
+    const toward = (tx, tz, scale = prof.speedScale) => {
       const dx = tx - bot.x;
       const dz = tz - bot.z;
       const d = Math.hypot(dx, dz);
@@ -241,7 +344,7 @@ export class PixelHoopsEngine {
     }
 
     if (bot.shootHeld) {
-      // Release near the top of the jump, with some human-like error.
+      // Release near the top of the jump, with difficulty-scaled timing precision.
       if (bot.vy <= (b.releaseVy ?? 0)) {
         input.shoot = false;
       } else {
@@ -255,31 +358,40 @@ export class PixelHoopsEngine {
       const d = distToHoop(bot.x, bot.z);
       const defGap = opp ? Math.hypot(opp.x - bot.x, opp.z - bot.z) : 9;
       // Drive with a weave so the defender has to move.
-      const sideX = HOOP.x + b.weave * 1.3;
-      if (d < DUNK_RANGE * 0.95 && (defGap > 0.7 || this.rng() < 0.03)) {
+      const sideX = HOOP.x + b.weave * 1.35;
+      if (d < DUNK_RANGE * prof.dunkRangeMult && (defGap > prof.dunkGap || this.rng() < prof.dunkAggression)) {
         toward(HOOP.x, HOOP.z + 0.6);
         input.shoot = true;
-      } else if (d > 1.8 && d < 5.4 && this.rng() < (defGap > 1.2 ? 0.06 : 0.012)) {
+      } else if (d > 1.75 && d < 5.5 && this.rng() < (defGap > 1.25 ? prof.jumperOpenChance : prof.jumperContestedChance)) {
+        // Pull up for a jumper — or lean back into a Bird/Jordan fadeaway when guarded!
+        if (defGap < 1.55 && this.rng() < prof.fadeawayChance) {
+          const awayX = bot.x - HOOP.x;
+          const awayZ = bot.z - HOOP.z;
+          const al = Math.hypot(awayX, awayZ) || 1;
+          input.moveX = (awayX / al) * 0.9;
+          input.moveZ = (awayZ / al) * 0.9;
+        }
         input.shoot = true;
-        b.releaseVy = (this.rng() - 0.5) * 2.2;
+        b.releaseVy = (this.rng() - 0.5) * prof.releaseVySpread;
       } else if (d > 6.2) {
         toward(HOOP.x, HOOP.z + 3.0);
       } else {
-        toward(d > 2.6 ? sideX : HOOP.x, HOOP.z + 0.4);
-        if (defGap < 0.8 && bot.jukeCooldown <= 0 && this.rng() < 0.08) input.jump = true;
+        toward(d > 2.5 ? sideX : HOOP.x, HOOP.z + 0.4);
+        if (defGap < 1.05 && bot.jukeCooldown <= 0 && this.rng() < prof.jukeChance) input.jump = true;
       }
     } else if (opp && this.ball.state === 'held' && this.ball.ownerId === opp.id) {
       // Defense: stay between the ball and the hoop.
       const hx = HOOP.x - opp.x;
       const hz = HOOP.z - opp.z;
       const hl = Math.hypot(hx, hz) || 1;
-      const gap = Math.min(0.85, hl * 0.5);
+      const gap = Math.min(prof.defGap, hl * 0.5);
       toward(opp.x + (hx / hl) * gap, opp.z + (hz / hl) * gap);
       const gapNow = Math.hypot(opp.x - bot.x, opp.z - bot.z);
-      if (gapNow < STEAL_RANGE && bot.stealCooldown <= 0 && this.rng() < 0.035) input.shoot = true;
+      if (gapNow < STEAL_RANGE && bot.stealCooldown <= 0 && this.rng() < prof.stealChance) input.shoot = true;
       if (opp.shootHeld || opp.action === 'dunk') {
         b.reaction += dt;
-        if (b.reaction > 0.12 + this.rng() * 0.15 && gapNow < 1.6) input.jump = true;
+        const delay = prof.blockDelayMin + this.rng() * (prof.blockDelayMax - prof.blockDelayMin);
+        if (b.reaction > delay && gapNow < prof.blockRange) input.jump = true;
       } else {
         b.reaction = 0;
       }
@@ -287,7 +399,7 @@ export class PixelHoopsEngine {
       // Chase the rebound.
       const tx = this.ball.state === 'flight' ? HOOP.x : this.ball.x;
       const tz = this.ball.state === 'flight' ? HOOP.z + 1.0 : this.ball.z;
-      toward(tx, tz);
+      toward(tx, tz, prof.reboundScale);
     }
     bot.input = input;
   }
@@ -335,10 +447,12 @@ export class PixelHoopsEngine {
 
     p.jukeCooldown = Math.max(0, p.jukeCooldown - dt);
     p.stealCooldown = Math.max(0, p.stealCooldown - dt);
+    p.shotReleaseTimer = Math.max(0, p.shotReleaseTimer - dt);
     if (p.actionTimer > 0) {
       p.actionTimer -= dt;
       if (p.actionTimer <= 0 && (p.action === 'steal' || p.action === 'stumble' || p.action === 'celebrate')) {
         p.action = this.ball.ownerId === p.id && this.ball.state === 'held' ? 'dribble' : 'idle';
+        p.moveVariant = '';
       }
     }
 
@@ -351,8 +465,17 @@ export class PixelHoopsEngine {
     if (canMove) {
       if (p.jukeTimer > 0) {
         p.jukeTimer -= dt;
+        const dur = p.jukeDuration || JUKE_TIME;
+        p.moveProgress = clamp(1 - p.jukeTimer / dur, 0, 1);
         p.vx = p.jukeX * JUKE_SPEED;
         p.vz = p.jukeZ * JUKE_SPEED;
+        if (p.jukeTimer <= 0) {
+          p.moveProgress = 0;
+          if (p.action === 'crossover' || p.action === 'spin') {
+            p.action = hasBall ? 'dribble' : 'idle';
+            p.moveVariant = '';
+          }
+        }
       } else if (mag > 0.01) {
         const speed = (hasBall ? DRIBBLE_SPEED : MOVE_SPEED) * Math.min(1, mag);
         p.vx = (input.moveX / mag) * speed;
@@ -384,11 +507,27 @@ export class PixelHoopsEngine {
         let jz = input.moveZ;
         const jl = Math.hypot(jx, jz);
         if (jl < 0.2) { jx = Math.sin(p.yaw); jz = Math.cos(p.yaw); } else { jx /= jl; jz /= jl; }
+        const opp = this._opponentOf(p.id);
+        const oppDist = opp ? Math.hypot(opp.x - p.x, opp.z - p.z) : 9;
+        // Close defender triggers classic Jordan vs Bird 360° spin move; open floor does a sharp crossover.
+        const isSpin = oppDist < 1.35;
+        p.dribbleHand = p.dribbleHand === 1 ? -1 : 1;
         p.jukeX = jx;
         p.jukeZ = jz;
-        p.jukeTimer = JUKE_TIME;
+        p.jukeDuration = isSpin ? 0.28 : 0.23;
+        p.jukeTimer = p.jukeDuration;
         p.jukeCooldown = JUKE_COOLDOWN;
-        this.events.push({ type: 'juke', playerId: p.id, x: p.x, z: p.z });
+        p.action = isSpin ? 'spin' : 'crossover';
+        p.moveVariant = isSpin ? 'spin' : 'crossover';
+        p.moveProgress = 0;
+        this.events.push({ type: 'juke', variant: p.moveVariant, playerId: p.id, x: p.x, z: p.z });
+
+        // Shake a tight defender off balance (classic ankle-breaker!).
+        if (opp && opp.grounded && oppDist < 1.15 && opp.action !== 'stumble' && this.rng() < (isSpin ? 0.34 : 0.2)) {
+          opp.action = 'stumble';
+          opp.actionTimer = 0.42;
+          this.events.push({ type: 'ankle_break', playerId: p.id, victimId: opp.id, x: opp.x, z: opp.z });
+        }
       }
       if (shootPressed && p.grounded) {
         const d = distToHoop(p.x, p.z);
@@ -400,6 +539,7 @@ export class PixelHoopsEngine {
         p.vy = BLOCK_JUMP_VY;
         p.grounded = false;
         p.action = 'block';
+        p.moveVariant = '';
         this.events.push({ type: 'jump', playerId: p.id, x: p.x, z: p.z });
       }
       if (shootPressed && p.grounded && p.stealCooldown <= 0 && p.action !== 'stumble') {
@@ -426,6 +566,8 @@ export class PixelHoopsEngine {
         p.grounded = true;
         if (p.action === 'block' || p.action === 'shoot' || p.action === 'dunk') {
           p.action = this.ball.ownerId === p.id && this.ball.state === 'held' ? 'dribble' : 'idle';
+          p.moveVariant = '';
+          p.moveProgress = 0;
         }
         this.events.push({ type: 'land', playerId: p.id, x: p.x, z: p.z });
       }
@@ -454,18 +596,36 @@ export class PixelHoopsEngine {
   }
 
   _startJumpShot(p) {
+    const toHoopX = HOOP.x - p.x;
+    const toHoopZ = HOOP.z - p.z;
+    const hl = Math.hypot(toHoopX, toHoopZ) || 1;
+    const nx = toHoopX / hl;
+    const nz = toHoopZ / hl;
+    // Pulling the stick away from the hoop triggers a Jordan/Bird fadeaway jumper!
+    const awayDot = p.input.moveX * nx + p.input.moveZ * nz;
+    const isFadeaway = awayDot < -0.35;
+
     p.shootHeld = true;
     p.action = 'shoot';
+    p.moveVariant = isFadeaway ? 'fadeaway' : 'jumper';
+    p.shotReleaseTimer = 0;
     p.vy = SHOT_JUMP_VY;
     p.grounded = false;
-    p.vx *= 0.25;
-    p.vz *= 0.25;
-    p.yaw = Math.atan2(HOOP.x - p.x, HOOP.z - p.z);
-    this.events.push({ type: 'shot_rise', playerId: p.id, x: p.x, z: p.z });
+    if (isFadeaway) {
+      p.vx = -nx * 1.15;
+      p.vz = -nz * 1.15;
+    } else {
+      p.vx *= 0.25;
+      p.vz *= 0.25;
+    }
+    p.yaw = Math.atan2(toHoopX, toHoopZ);
+    this.events.push({ type: 'shot_rise', playerId: p.id, fadeaway: isFadeaway, x: p.x, z: p.z });
   }
 
   _releaseJumpShot(p) {
     p.shootHeld = false;
+    p.shotReleaseTimer = 0.36;
+    const isFadeaway = p.moveVariant === 'fadeaway';
     const d = distToHoop(p.x, p.z);
     const opp = this._opponentOf(p.id);
 
@@ -474,13 +634,18 @@ export class PixelHoopsEngine {
     let pct = d < 2.2 ? 0.72 : d < THREE_PT_RADIUS ? 0.58 : 0.46;
     pct -= Math.max(0, d - THREE_PT_RADIUS) * 0.09;
     pct += (timing - 0.6) * 0.55;
+    if (p.isBot) {
+      pct += this._botProfile(p).shotBias;
+    }
     let contest = 0;
     if (opp) {
       const od = Math.hypot(opp.x - p.x, opp.z - p.z);
       contest = clamp((1.6 - od) / 1.6, 0, 1);
       if (!opp.grounded) contest *= 1.35;
+      if (isFadeaway) contest *= 0.62; // fadeaway creates separation
       pct -= contest * 0.32;
     }
+    if (isFadeaway) pct -= 0.03; // slightly tougher off-balance shot when wide open
     if (d > MAX_SHOT_RANGE) pct = 0.02;
     pct = clamp(pct, 0.02, 0.95);
 
@@ -488,13 +653,29 @@ export class PixelHoopsEngine {
     const points = d > THREE_PT_RADIUS ? 3 : 2;
     const hx = Math.sin(p.yaw);
     const hz = Math.cos(p.yaw);
-    const start = { x: p.x + hx * 0.25, y: p.y + 1.25, z: p.z + hz * 0.25 };
-    this._launchBall(p, start, made, points, false, { timing, contest });
-    this.events.push({ type: 'shot', playerId: p.id, timing: Number(timing.toFixed(2)), points, x: start.x, y: start.y, z: start.z });
+    const start = { x: p.x + hx * 0.25, y: p.y + 1.28, z: p.z + hz * 0.25 };
+    this._launchBall(p, start, made, points, false, { timing, contest, fadeaway: isFadeaway });
+    this.events.push({
+      type: 'shot',
+      playerId: p.id,
+      timing: Number(timing.toFixed(2)),
+      points,
+      fadeaway: isFadeaway,
+      x: start.x,
+      y: start.y,
+      z: start.z,
+    });
   }
 
   _startDunk(p) {
+    const d = distToHoop(p.x, p.z);
+    // Pick a signature Jordan vs Bird dunk based on takeoff distance!
+    const pool = d > 1.1 ? ['tomahawk', 'windmill'] : ['twohand', 'cradle', 'tomahawk'];
+    const dunkStyle = pool[Math.floor(this.rng() * pool.length)];
+
     p.action = 'dunk';
+    p.moveVariant = dunkStyle;
+    p.moveProgress = 0;
     p.vy = 6.8;
     p.grounded = false;
     const dx = HOOP.x - p.x;
@@ -505,9 +686,9 @@ export class PixelHoopsEngine {
     p.yaw = Math.atan2(dx, dz);
     this.ball.state = 'dunk';
     this.ball.ownerId = p.id;
-    this.ball.flight = { t: 0, dur: t, shooterId: p.id, points: 2, dunk: true };
+    this.ball.flight = { t: 0, dur: t, shooterId: p.id, points: 2, dunk: true, dunkStyle };
     this.lastShot = { shooterId: p.id, points: 2 };
-    this.events.push({ type: 'dunk_start', playerId: p.id, x: p.x, z: p.z });
+    this.events.push({ type: 'dunk_start', playerId: p.id, dunkStyle, x: p.x, z: p.z });
   }
 
   _launchBall(p, start, made, points, dunk, meta) {
@@ -525,6 +706,7 @@ export class PixelHoopsEngine {
     const vx = (target.x - start.x) / dur;
     const vz = (target.z - start.z) / dur;
     const vy = (target.y - start.y + 0.5 * BALL_GRAVITY * dur * dur) / dur;
+    const blockable = meta?.fadeaway ? 0.22 : 0.32;
     Object.assign(this.ball, {
       state: 'flight',
       ownerId: null,
@@ -534,7 +716,7 @@ export class PixelHoopsEngine {
       vx,
       vy,
       vz,
-      flight: { t: 0, dur, made, points, shooterId: p.id, dunk, blockable: 0.32, ...meta },
+      flight: { t: 0, dur, made, points, shooterId: p.id, dunk, blockable, ...meta },
     });
     this.lastShot = { shooterId: p.id, points };
   }
@@ -581,14 +763,28 @@ export class PixelHoopsEngine {
       const rx = -hz;
       const rz = hx;
       if (owner.shootHeld || owner.action === 'shoot') {
-        ball.x = owner.x + hx * 0.18;
-        ball.y = owner.y + 1.25;
-        ball.z = owner.z + hz * 0.18;
+        const back = owner.moveVariant === 'fadeaway' ? -0.05 : 0.18;
+        ball.x = owner.x + hx * back;
+        ball.y = owner.y + 1.28;
+        ball.z = owner.z + hz * back;
+      } else if (owner.action === 'spin') {
+        // Spin move: ball orbits tightly with the 360° body spin.
+        const a = owner.yaw + owner.moveProgress * Math.PI * 2;
+        ball.x = owner.x + Math.sin(a) * 0.26;
+        ball.z = owner.z + Math.cos(a) * 0.26;
+        ball.y = owner.y + 0.58;
+      } else if (owner.action === 'crossover') {
+        // Crossover: whip the ball low across the front to the new dribble hand.
+        const sweep = (owner.moveProgress * 2 - 1) * owner.dribbleHand;
+        ball.x = owner.x + hx * 0.32 + rx * sweep * 0.24;
+        ball.z = owner.z + hz * 0.32 + rz * sweep * 0.24;
+        ball.y = owner.y + BALL_RADIUS + Math.abs(sweep) * 0.36;
       } else {
-        // Dribble: bounce at the right hand.
+        // Dribble: bounce at the active dribble hand.
+        const hand = owner.dribbleHand || 1;
         const bounce = Math.abs(Math.sin(owner.animPhase * 1.6));
-        ball.x = owner.x + hx * 0.28 + rx * 0.2;
-        ball.z = owner.z + hz * 0.28 + rz * 0.2;
+        ball.x = owner.x + hx * 0.28 + rx * 0.2 * hand;
+        ball.z = owner.z + hz * 0.28 + rz * 0.2 * hand;
         ball.y = owner.y + BALL_RADIUS + bounce * 0.48;
       }
       return;
@@ -598,10 +794,34 @@ export class PixelHoopsEngine {
       const f = ball.flight;
       const owner = this.players.get(f.shooterId);
       f.t += dt;
+      const prog = clamp(f.t / f.dur, 0, 1);
       if (owner) {
-        ball.x = owner.x + Math.sin(owner.yaw) * 0.22;
-        ball.z = owner.z + Math.cos(owner.yaw) * 0.22;
-        ball.y = owner.y + 1.35 + Math.min(0.35, f.t * 0.8);
+        owner.moveProgress = prog;
+        const hx = Math.sin(owner.yaw);
+        const hz = Math.cos(owner.yaw);
+        const rx = -hz;
+        const rz = hx;
+        if (f.dunkStyle === 'windmill') {
+          const ang = -Math.PI * 0.3 + prog * Math.PI * 1.9;
+          const reach = 0.34;
+          ball.x = owner.x + hx * (0.16 + Math.cos(ang) * reach) + rx * 0.16;
+          ball.z = owner.z + hz * (0.16 + Math.cos(ang) * reach) + rz * 0.16;
+          ball.y = owner.y + 1.15 + Math.sin(ang) * reach;
+        } else if (f.dunkStyle === 'cradle') {
+          const lift = prog < 0.45 ? 0.68 : 0.68 + ((prog - 0.45) / 0.55) * 0.92;
+          ball.x = owner.x + hx * (0.14 + prog * 0.16) + rx * (0.22 * (1 - prog * 0.7));
+          ball.z = owner.z + hz * (0.14 + prog * 0.16) + rz * (0.22 * (1 - prog * 0.7));
+          ball.y = owner.y + lift;
+        } else if (f.dunkStyle === 'tomahawk') {
+          const cock = prog < 0.65 ? -0.18 : -0.18 + ((prog - 0.65) / 0.35) * 0.48;
+          ball.x = owner.x + hx * cock + rx * 0.12;
+          ball.z = owner.z + hz * cock + rz * 0.12;
+          ball.y = owner.y + 1.48 + Math.sin(prog * Math.PI) * 0.2;
+        } else {
+          ball.x = owner.x + hx * 0.22;
+          ball.z = owner.z + hz * 0.22;
+          ball.y = owner.y + 1.35 + Math.min(0.35, f.t * 0.8);
+        }
       }
       const opp = owner ? this._opponentOf(owner.id) : null;
       if (opp && !opp.grounded && !f.blockRolled && f.t < f.dur * 0.85) {
@@ -628,9 +848,9 @@ export class PixelHoopsEngine {
         ball.vx = 0;
         ball.vz = 0;
         ball.vy = -2.5;
-        ball.flight = { t: 0, dur: 0, made: true, points: 2, shooterId: f.shooterId, dunk: true, sunk: true };
-        this.events.push({ type: 'rim_shake', x: HOOP.x, z: HOOP.z });
-        this._score(f.shooterId, 2, true);
+        ball.flight = { t: 0, dur: 0, made: true, points: 2, shooterId: f.shooterId, dunk: true, dunkStyle: f.dunkStyle, sunk: true };
+        this.events.push({ type: 'rim_shake', x: HOOP.x, z: HOOP.z, dunkStyle: f.dunkStyle });
+        this._score(f.shooterId, 2, true, { dunkStyle: f.dunkStyle });
       }
       return;
     }
@@ -674,7 +894,7 @@ export class PixelHoopsEngine {
           ball.vz = 0;
           ball.vy = -1.8;
           f.sunk = true;
-          this._score(f.shooterId, f.points, false);
+          this._score(f.shooterId, f.points, false, { fadeaway: Boolean(f.fadeaway) });
         } else {
           // Off the rim.
           const ox = ball.x - HOOP.x;
@@ -757,12 +977,14 @@ export class PixelHoopsEngine {
       shooter.shootHeld = false;
       shooter.action = 'stumble';
       shooter.actionTimer = 0.3;
+      shooter.moveVariant = '';
+      shooter.moveProgress = 0;
       if (!shooter.grounded) { shooter.vx = 0; shooter.vz = 0; }
     }
     this.events.push({ type: 'block', playerId: blocker.id, x: ball.x, y: ball.y, z: ball.z });
   }
 
-  _score(shooterId, points, dunk) {
+  _score(shooterId, points, dunk, meta = {}) {
     const shooter = this.players.get(shooterId);
     if (!shooter) return;
     shooter.score += points;
@@ -776,6 +998,8 @@ export class PixelHoopsEngine {
       color: shooter.color,
       points,
       dunk,
+      dunkStyle: meta.dunkStyle || '',
+      fadeaway: Boolean(meta.fadeaway),
       score: shooter.score,
       x: HOOP.x,
       y: HOOP.rimY,
@@ -806,6 +1030,7 @@ export class PixelHoopsEngine {
       threePtRadius: THREE_PT_RADIUS,
       checkSpot: CHECK_SPOT,
       winScore: WIN_SCORE,
+      botDifficulty: this.botDifficulty,
     };
   }
 
@@ -823,8 +1048,13 @@ export class PixelHoopsEngine {
         x: r(p.x),
         y: r(p.y),
         z: r(p.z),
+        vy: r(p.vy, 2),
         yaw: r(p.yaw),
         action: p.action,
+        dribbleHand: p.dribbleHand,
+        moveVariant: p.moveVariant,
+        moveProgress: r(p.moveProgress, 2),
+        followThrough: p.shotReleaseTimer > 0,
         hasBall: this.ball.ownerId === p.id && (this.ball.state === 'held' || this.ball.state === 'dunk'),
         onOffense: this.offenseId === p.id,
         animPhase: r(p.animPhase, 2),
@@ -835,6 +1065,7 @@ export class PixelHoopsEngine {
     return {
       gameId: this.id,
       phase: this.phase,
+      botDifficulty: this.botDifficulty,
       roundTime: r(this.roundTime, 2),
       winnerId: this.winnerId,
       winnerName: this.winnerName,

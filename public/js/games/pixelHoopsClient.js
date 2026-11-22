@@ -3,17 +3,19 @@ import { sound } from '../audio.js';
 import { drawPixelText, drawPixelTextCentered, pixelTextWidth } from './pixelFont.js';
 
 /**
- * Pixel Hoops renderer: original late-80s streetball look in smooth
- * low-poly 3D. Lanky ballers with jointed limbs, tank tops, striped tube
- * socks and high-tops, on a polished hardwood half court with a real rim
- * and net. Only the scoreboard keeps a retro dot-matrix display.
+ * Pixel Hoops renderer: Jordan vs. Bird (NES, 1989) inspired 8-bit pixel-art
+ * tabletop basketball. Chunky voxel-blocky ballers with crisp nearest-neighbor
+ * pixel textures, 2-step NES shading, stepped retro sprite animation frames,
+ * signature moves (crossover, 360 spin, fadeaway jumper, tomahawk/windmill/
+ * cradle/two-hand dunks), and an 8-bit hardwood half-court.
  */
 
-const SKIN_TONES = [0x8d5524, 0xc68642, 0xe0ac69, 0xf1c27d, 0x5c3a1e, 0xa86b3c, 0xffdbac];
-const HAIR_COLORS = [0x1a1a1a, 0x3b2314, 0x6b3e1f, 0xc99a45, 0x2b1b10, 0x8a3b12];
-const HAIR_STYLES = ['short', 'flattop', 'curly', 'buzz', 'mullet'];
+const SKIN_TONES = ['#8d5524', '#c68642', '#e0ac69', '#f1c27d', '#5c3a1e', '#a86b3c', '#f5cfa0'];
+const HAIR_COLORS = ['#181820', '#3b2314', '#6b3e1f', '#d4a438', '#2b1b10', '#8a3b12'];
+const HAIR_STYLES = ['bald', 'flattop', 'curly', 'buzz', 'mullet'];
+const JERSEY_NUMBERS = [23, 33, 32, 21, 34, 11, 7, 8, 12, 44, 15, 24];
 
-// 3x5 digits for the dot-matrix scoreboard.
+// 3x5 digits for the NES dot-matrix scoreboard.
 const DIGITS = {
   0: ['111', '101', '101', '101', '111'],
   1: ['010', '110', '010', '010', '111'],
@@ -34,17 +36,18 @@ function drawPixelNumber(ctx, num, x, y, px, color) {
     if (!rows) return;
     rows.forEach((row, ry) => {
       for (let rx = 0; rx < 3; rx++) {
-        if (row[rx] === '1') ctx.fillRect(x + (ci * 4 + rx) * px, y + ry * px, px - 0.4, px - 0.4);
+        if (row[rx] === '1') ctx.fillRect(Math.round(x + (ci * 4 + rx) * px), Math.round(y + ry * px), Math.ceil(px), Math.ceil(px));
       }
     });
   });
 }
 
-function canvasTexture(w, h, draw, { smooth = true } = {}) {
+function canvasTexture(w, h, draw, { smooth = false } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
   draw(ctx, w, h);
   const tex = new THREE.CanvasTexture(canvas);
   if (smooth) {
@@ -64,11 +67,30 @@ function hashString(str) {
   return Math.abs(h);
 }
 
-// ---- Retro rendering: 3-step cel shading and inverted-hull black outlines.
+/** Step a continuous phase into discrete NES animation frames. */
+function stepPhase(phase, stepsPerCycle = 4) {
+  const unit = (Math.PI * 2) / stepsPerCycle;
+  return Math.floor(phase / unit) * unit;
+}
+
+/** Bresenham pixel circle/arc for crisp 8-bit court markings. */
+function drawPixelArc(ctx, cx, cy, r, startAng, endAng, color) {
+  ctx.fillStyle = color;
+  const steps = Math.max(24, Math.ceil(r * 8));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const a = startAng + (endAng - startAng) * t;
+    const px = Math.round(cx + Math.cos(a) * r);
+    const py = Math.round(cy + Math.sin(a) * r);
+    ctx.fillRect(px, py, 1, 1);
+  }
+}
+
+// ---- Retro NES rendering: crisp 2-step cel shading + bold black pixel outlines.
 let toonRamp = null;
 function toonGradient() {
   if (!toonRamp) {
-    toonRamp = new THREE.DataTexture(new Uint8Array([70, 160, 255]), 3, 1, THREE.RedFormat);
+    toonRamp = new THREE.DataTexture(new Uint8Array([125, 255]), 2, 1, THREE.RedFormat);
     toonRamp.magFilter = THREE.NearestFilter;
     toonRamp.minFilter = THREE.NearestFilter;
     toonRamp.generateMipmaps = false;
@@ -77,7 +99,6 @@ function toonGradient() {
   return toonRamp;
 }
 
-/** Cel-shaded material; PBR-only options are ignored. */
 function toon(opts = {}) {
   const { roughness, metalness, flatShading, ...rest } = opts;
   return new THREE.MeshToonMaterial({ gradientMap: toonGradient(), ...rest });
@@ -90,7 +111,7 @@ function mat(color, opts = {}) {
 const outlineMats = new Map();
 function outlineMaterial(width) {
   if (!outlineMats.has(width)) {
-    const m = new THREE.MeshBasicMaterial({ color: 0x0b0b14, side: THREE.BackSide });
+    const m = new THREE.MeshBasicMaterial({ color: 0x090910, side: THREE.BackSide });
     m.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
@@ -103,8 +124,7 @@ function outlineMaterial(width) {
   return outlineMats.get(width);
 }
 
-/** Give every lit mesh under `root` a black back-face shell. */
-function addOutlines(root, width = 0.012) {
+function addOutlines(root, width = 0.013) {
   const targets = [];
   root.traverse((o) => {
     if (o.isMesh && !o.userData.noOutline && o.material && !o.material.isMeshBasicMaterial && !o.material.transparent) {
@@ -126,27 +146,35 @@ function mesh(geo, material, x = 0, y = 0, z = 0) {
   return m;
 }
 
-/** Cylinder hanging down from its pivot (top at y=0). */
-function limb(rTop, rBot, len, material, seg = 7) {
-  const geo = new THREE.CylinderGeometry(rTop, rBot, len, seg);
+/** Blocky voxel limb hanging down from its pivot (top at y=0). */
+function pixelLimb(w, len, d, material) {
+  const geo = new THREE.BoxGeometry(w, len, d);
   geo.translate(0, -len / 2, 0);
   return mesh(geo, material);
 }
 
-let blobShadowTex = null;
-function blobShadow(size, opacity, color = 0x000000) {
-  if (!blobShadowTex) {
-    blobShadowTex = canvasTexture(64, 64, (ctx) => {
-      const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
-      g.addColorStop(0, 'rgba(255,255,255,1)');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 64, 64);
+// ---- Pixelated NES dithered oval shadow
+let pixelShadowTex = null;
+function pixelShadow(size, opacity, color = 0x000000) {
+  if (!pixelShadowTex) {
+    pixelShadowTex = canvasTexture(16, 16, (ctx) => {
+      ctx.fillStyle = '#ffffff';
+      for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < 16; x++) {
+          const dx = (x - 7.5) / 7;
+          const dy = (y - 7.5) / 7;
+          const d2 = dx * dx + dy * dy;
+          // Crisp NES dithered edge
+          if (d2 < 0.62 || (d2 < 0.96 && (x + y) % 2 === 0)) {
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
     });
   }
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(size, size),
-    new THREE.MeshBasicMaterial({ map: blobShadowTex, color, transparent: true, opacity, depthWrite: false })
+    new THREE.MeshBasicMaterial({ map: pixelShadowTex, color, transparent: true, opacity, depthWrite: false })
   );
   m.rotation.x = -Math.PI / 2;
   m.position.y = 0.012;
@@ -158,36 +186,112 @@ function makeNameTexture(name, color, score, isSelf) {
   return canvasTexture(128, 32, (ctx) => {
     const scale = pixelTextWidth(text, 1) <= 56 ? 2 : 1;
     const tw = pixelTextWidth(text, scale);
-    ctx.fillStyle = '#0b0b14';
-    ctx.fillRect(64 - tw / 2 - 5, 4, tw + 10, 22);
+    ctx.fillStyle = '#090910';
+    ctx.fillRect(Math.floor(64 - tw / 2 - 5), 4, tw + 10, 22);
     ctx.fillStyle = color;
-    ctx.fillRect(64 - tw / 2 - 5, 22, tw + 10, 4);
+    ctx.fillRect(Math.floor(64 - tw / 2 - 5), 22, tw + 10, 4);
     drawPixelTextCentered(ctx, text, 64, 13, scale, '#ffffff');
-  }, { smooth: false });
+  });
 }
 
-function jerseyTexture(color, number) {
-  // Cylinder UVs here put the chest at u=0.25 and the back at u=0.75.
-  return canvasTexture(256, 128, (ctx, w, h) => {
+function jerseyFaceTexture(color, number, isFront) {
+  return canvasTexture(16, 18, (ctx, w, h) => {
     ctx.fillStyle = color;
     ctx.fillRect(0, 0, w, h);
-    // Trim at the neckline and hem
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, 7);
-    ctx.fillRect(0, h - 6, w, 6);
-    for (const u of [0.25, 0.75]) {
-      drawPixelTextCentered(ctx, String(number), u * w, h * 0.56, 8, '#ffffff');
+    // White collar + shoulder trim
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, w, 2);
+    ctx.fillRect(0, h - 2, w, 2);
+    // Side vertical trim pixels
+    ctx.fillRect(0, 2, 1, h - 4);
+    ctx.fillRect(w - 1, 2, 1, h - 4);
+    // V-neck cutout on front
+    if (isFront) {
+      ctx.fillStyle = '#090910';
+      ctx.fillRect(6, 0, 4, 2);
+      ctx.fillRect(7, 2, 2, 1);
     }
-  }, { smooth: false });
+    // Crisp 8-bit jersey number
+    const numStr = String(number);
+    const numW = numStr.length * 4 - 1;
+    const startX = Math.floor((w - numW) / 2);
+    drawPixelNumber(ctx, numStr, startX, 6, 1, '#090910');
+    drawPixelNumber(ctx, numStr, startX, 5, 1, '#ffffff');
+  });
+}
+
+function jerseySideTexture(color) {
+  return canvasTexture(8, 18, (ctx, w, h) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(3, 0, 2, h);
+    ctx.fillStyle = '#090910';
+    ctx.fillRect(2, 0, 1, h);
+    ctx.fillRect(5, 0, 1, h);
+  });
+}
+
+function shortsTexture(color) {
+  return canvasTexture(16, 10, (ctx, w, h) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, w, h);
+    // White waistband
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(0, 0, w, 2);
+    // Bottom trim stripe
+    ctx.fillRect(0, h - 2, w, 1);
+    // Side stripe
+    ctx.fillRect(0, 2, 2, h - 3);
+    ctx.fillRect(w - 2, 2, 2, h - 3);
+  });
+}
+
+function faceTexture(skinHex, hairHex, hasMustache, hasHeadband, teamHex) {
+  return canvasTexture(16, 16, (ctx, w, h) => {
+    ctx.fillStyle = skinHex;
+    ctx.fillRect(0, 0, w, h);
+    // Forehead shadow / hairline
+    ctx.fillStyle = hairHex;
+    ctx.fillRect(0, 0, w, 3);
+    if (hasHeadband) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 2, w, 3);
+      ctx.fillStyle = teamHex;
+      ctx.fillRect(0, 3, w, 1);
+    }
+    // Brows
+    ctx.fillStyle = '#111118';
+    ctx.fillRect(3, 6, 3, 1);
+    ctx.fillRect(10, 6, 3, 1);
+    // Eyes (classic NES white + black pixel)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(3, 7, 3, 2);
+    ctx.fillRect(10, 7, 3, 2);
+    ctx.fillStyle = '#090910';
+    ctx.fillRect(4, 7, 2, 2);
+    ctx.fillRect(10, 7, 2, 2);
+    // Pixel nose
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(7, 9, 2, 2);
+    // Optional Bird-style 80s mustache
+    if (hasMustache) {
+      ctx.fillStyle = hairHex;
+      ctx.fillRect(5, 11, 6, 2);
+    }
+    // Determined NES mouth
+    ctx.fillStyle = '#2b1010';
+    ctx.fillRect(6, 13, 4, 1);
+  });
 }
 
 function sockTexture(stripe) {
-  return canvasTexture(16, 64, (ctx, w, h) => {
+  return canvasTexture(8, 12, (ctx, w, h) => {
     ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = stripe;
-    ctx.fillRect(0, 6, w, 7);
-    ctx.fillRect(0, 18, w, 5);
+    ctx.fillRect(0, 1, w, 2);
+    ctx.fillRect(0, 4, w, 2);
   });
 }
 
@@ -195,27 +299,30 @@ function createBaller(player, isSelf) {
   const seed = hashString(player.id);
   const jerseyColor = new THREE.Color(player.color);
   const jerseyHex = `#${jerseyColor.getHexString()}`;
-  const number = (seed % 54) + 1;
+  const shortsColor = jerseyColor.clone().multiplyScalar(0.82);
+  const shortsHex = `#${shortsColor.getHexString()}`;
+  const number = JERSEY_NUMBERS[seed % JERSEY_NUMBERS.length];
+  const skinHex = SKIN_TONES[seed % SKIN_TONES.length];
+  const hairHex = HAIR_COLORS[(seed >> 3) % HAIR_COLORS.length];
   const hairStyle = HAIR_STYLES[(seed >> 2) % HAIR_STYLES.length];
-  const hasHeadband = (seed >> 5) % 2 === 0;
+  const hasHeadband = (seed >> 5) % 3 === 0;
+  const hasMustache = (seed >> 6) % 3 === 0;
 
-  const skin = mat(SKIN_TONES[seed % SKIN_TONES.length]);
-  const hair = mat(HAIR_COLORS[(seed >> 3) % HAIR_COLORS.length], { roughness: 0.9 });
-  const jersey = toon({ map: jerseyTexture(jerseyHex, number), roughness: 0.75 });
-  const shortsMat = mat(jerseyColor.clone().multiplyScalar(0.82));
-  const trim = mat(0xffffff);
-  const sock = toon({ map: sockTexture(jerseyHex), roughness: 0.85 });
-  const shoe = mat(0xf1f5f9, { roughness: 0.5 });
-  const sole = mat(0x1f2937);
+  const skin = mat(skinHex);
+  const hair = mat(hairHex);
+  const trim = mat(0xf8fafc);
+  const sock = toon({ map: sockTexture(jerseyHex) });
+  const shoe = mat(0xf8fafc);
+  const sole = mat(0x181822);
   const accent = mat(jerseyColor);
-  const dark = mat(0x111111);
 
   const root = new THREE.Group();
-  const shadow = blobShadow(0.7, isSelf ? 0.7 : 0.45, isSelf ? jerseyColor : 0x000000);
+  const shadow = pixelShadow(0.72, isSelf ? 0.65 : 0.45, isSelf ? jerseyColor : 0x090910);
   root.add(shadow);
   if (isSelf) {
+    // Chunky pixelated octagonal player ring
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.3, 0.35, 32),
+      new THREE.RingGeometry(0.3, 0.36, 8),
       new THREE.MeshBasicMaterial({ color: jerseyColor, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
     );
     ring.rotation.x = -Math.PI / 2;
@@ -225,121 +332,140 @@ function createBaller(player, isSelf) {
 
   const body = new THREE.Group(); // yaw + jump height
   root.add(body);
-  const hips = new THREE.Group(); // crouch / lean pivot
+  const hips = new THREE.Group(); // crouch / lean / twist pivot
   hips.position.y = 0.56;
   body.add(hips);
 
-  // ---- Legs: hip -> thigh -> knee -> shin -> ankle -> high-top
+  // ---- Blocky NES Legs: hip -> thigh -> knee -> shin + striped sock -> pixel high-top
   const makeLeg = (side) => {
     const hip = new THREE.Group();
-    hip.position.set(side * 0.075, 0, 0);
+    hip.position.set(side * 0.085, 0, 0);
     hips.add(hip);
-    hip.add(limb(0.062, 0.05, 0.27, skin));
+    hip.add(pixelLimb(0.115, 0.26, 0.115, skin));
     const knee = new THREE.Group();
-    knee.position.y = -0.27;
+    knee.position.y = -0.26;
     hip.add(knee);
-    knee.add(mesh(new THREE.SphereGeometry(0.05, 7, 5), skin));
-    knee.add(limb(0.048, 0.038, 0.12, skin));
-    const sockMesh = limb(0.042, 0.04, 0.13, sock);
+    knee.add(pixelLimb(0.095, 0.12, 0.095, skin));
+    const sockMesh = pixelLimb(0.102, 0.14, 0.102, sock);
     sockMesh.position.y = -0.11;
     knee.add(sockMesh);
     const foot = new THREE.Group();
-    foot.position.y = -0.24;
+    foot.position.y = -0.25;
     knee.add(foot);
-    foot.add(mesh(new THREE.BoxGeometry(0.1, 0.075, 0.2), shoe, 0, -0.012, 0.035));
-    foot.add(mesh(new THREE.BoxGeometry(0.104, 0.022, 0.21), sole, 0, -0.05, 0.035));
-    foot.add(mesh(new THREE.BoxGeometry(0.105, 0.02, 0.1), accent, 0, 0.0, 0.02));
+    // Classic chunky 80s high-top sneaker
+    foot.add(mesh(new THREE.BoxGeometry(0.115, 0.085, 0.22), shoe, 0, -0.01, 0.04));
+    foot.add(mesh(new THREE.BoxGeometry(0.122, 0.025, 0.23), sole, 0, -0.055, 0.04));
+    foot.add(mesh(new THREE.BoxGeometry(0.12, 0.025, 0.12), accent, 0, 0.005, 0.03));
+    foot.add(mesh(new THREE.BoxGeometry(0.118, 0.022, 0.07), accent, 0, 0.032, -0.02));
     return { hip, knee, foot };
   };
   const legL = makeLeg(1);
   const legR = makeLeg(-1);
 
-  // ---- Shorts (one flared tube over both thighs) and torso
-  shortsMat.side = THREE.DoubleSide;
-  const shorts = mesh(new THREE.CylinderGeometry(0.15, 0.175, 0.2, 10, 1, true), shortsMat, 0, -0.06, 0);
-  shorts.scale.z = 0.72;
+  // ---- Blocky Pixel Shorts & Tank-Top Jersey Torso
+  const shortsTex = shortsTexture(shortsHex);
+  const shortsMat = toon({ map: shortsTex });
+  const shorts = mesh(new THREE.BoxGeometry(0.32, 0.2, 0.22), shortsMat, 0, -0.06, 0);
   hips.add(shorts);
-  const waistband = mesh(new THREE.CylinderGeometry(0.152, 0.152, 0.035, 10), trim, 0, 0.04, 0);
-  waistband.scale.z = 0.72;
-  hips.add(waistband);
 
-  const torsoGeo = new THREE.CylinderGeometry(0.17, 0.135, 0.36, 12, 1, false, -Math.PI / 2);
-  const torso = mesh(torsoGeo, jersey, 0, 0.23, 0);
-  torso.scale.z = 0.62;
+  const frontMat = toon({ map: jerseyFaceTexture(jerseyHex, number, true) });
+  const backMat = toon({ map: jerseyFaceTexture(jerseyHex, number, false) });
+  const sideMat = toon({ map: jerseySideTexture(jerseyHex) });
+  const topMat = mat(jerseyColor);
+  const torso = mesh(
+    new THREE.BoxGeometry(0.32, 0.37, 0.2),
+    [sideMat, sideMat, topMat, topMat, frontMat, backMat],
+    0,
+    0.225,
+    0
+  );
   hips.add(torso);
+
   const chest = new THREE.Group();
   chest.position.y = 0.41;
   hips.add(chest);
 
-  // ---- Arms: shoulder -> upper arm -> elbow -> forearm -> wristband -> hand
+  // ---- Blocky NES Arms: shoulder -> upper arm -> elbow -> forearm -> wristband -> pixel hand
   const makeArm = (side) => {
     const shoulder = new THREE.Group();
-    shoulder.position.set(side * 0.2, 0, 0);
+    shoulder.position.set(side * 0.215, -0.02, 0);
     chest.add(shoulder);
-    shoulder.add(mesh(new THREE.SphereGeometry(0.052, 7, 5), skin));
-    shoulder.add(limb(0.045, 0.038, 0.22, skin));
+    shoulder.add(pixelLimb(0.095, 0.22, 0.095, skin));
     const elbow = new THREE.Group();
     elbow.position.y = -0.22;
     shoulder.add(elbow);
-    elbow.add(limb(0.037, 0.032, 0.2, skin));
-    const band = limb(0.04, 0.04, 0.045, trim);
-    band.position.y = -0.14;
+    elbow.add(pixelLimb(0.084, 0.19, 0.084, skin));
+    const band = pixelLimb(0.094, 0.048, 0.094, trim);
+    band.position.y = -0.13;
     elbow.add(band);
-    elbow.add(mesh(new THREE.SphereGeometry(0.045, 7, 5), skin, 0, -0.22, 0));
+    elbow.add(mesh(new THREE.BoxGeometry(0.088, 0.082, 0.088), skin, 0, -0.22, 0));
     return { shoulder, elbow };
   };
   const armL = makeArm(1);
   const armR = makeArm(-1);
 
-  // ---- Neck and head
-  chest.add(mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.08, 7), skin, 0, 0.03, 0));
+  // ---- Neck & Blocky NES Pixel Head
+  chest.add(mesh(new THREE.BoxGeometry(0.09, 0.08, 0.09), skin, 0, 0.03, 0));
   const head = new THREE.Group();
-  head.position.y = 0.15;
+  head.position.y = 0.165;
   chest.add(head);
-  const skull = mesh(new THREE.SphereGeometry(0.105, 10, 8), skin);
-  skull.scale.set(0.92, 1.08, 1);
-  head.add(skull);
-  head.add(mesh(new THREE.SphereGeometry(0.025, 5, 4), skin, 0.1, -0.005, 0));
-  head.add(mesh(new THREE.SphereGeometry(0.025, 5, 4), skin, -0.1, -0.005, 0));
-  head.add(mesh(new THREE.BoxGeometry(0.022, 0.026, 0.01), dark, 0.037, 0.015, 0.1));
-  head.add(mesh(new THREE.BoxGeometry(0.022, 0.026, 0.01), dark, -0.037, 0.015, 0.1));
-  head.add(mesh(new THREE.BoxGeometry(0.03, 0.04, 0.03), skin, 0, -0.01, 0.105));
 
-  const hairCap = (r, sy, y, z = -0.005) => {
-    const cap = mesh(new THREE.SphereGeometry(r, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55), hair, 0, y, z);
-    cap.scale.y = sy;
-    head.add(cap);
-  };
+  const faceMat = toon({ map: faceTexture(skinHex, hairStyle === 'bald' ? skinHex : hairHex, hasMustache, hasHeadband, jerseyHex) });
+  const headBackMat = hairStyle === 'bald' ? skin : hair;
+  const skull = mesh(
+    new THREE.BoxGeometry(0.22, 0.23, 0.21),
+    [skin, skin, headBackMat, skin, faceMat, headBackMat]
+  );
+  head.add(skull);
+
+  // Pixel ears
+  head.add(mesh(new THREE.BoxGeometry(0.035, 0.06, 0.04), skin, 0.12, -0.01, 0));
+  head.add(mesh(new THREE.BoxGeometry(0.035, 0.06, 0.04), skin, -0.12, -0.01, 0));
+
+  // Iconic 80s NES Hairstyles (voxel blocks)
   switch (hairStyle) {
     case 'flattop':
-      hairCap(0.108, 0.9, 0.012);
-      head.add(mesh(new THREE.BoxGeometry(0.19, 0.1, 0.19), hair, 0, 0.1, -0.01));
+      head.add(mesh(new THREE.BoxGeometry(0.23, 0.095, 0.22), hair, 0, 0.14, -0.005));
       break;
     case 'curly':
-      hairCap(0.13, 1.0, 0.0, -0.015);
-      break;
-    case 'buzz':
-      hairCap(0.107, 0.75, 0.018);
+      head.add(mesh(new THREE.BoxGeometry(0.26, 0.11, 0.25), hair, 0, 0.12, -0.01));
+      head.add(mesh(new THREE.BoxGeometry(0.25, 0.11, 0.08), hair, 0, 0.04, -0.1));
       break;
     case 'mullet':
-      hairCap(0.11, 0.95, 0.01);
-      head.add(mesh(new THREE.BoxGeometry(0.16, 0.14, 0.05), hair, 0, -0.05, -0.085));
+      head.add(mesh(new THREE.BoxGeometry(0.23, 0.06, 0.22), hair, 0, 0.125, -0.01));
+      head.add(mesh(new THREE.BoxGeometry(0.22, 0.15, 0.06), hair, 0, -0.04, -0.11));
       break;
+    case 'buzz':
+      head.add(mesh(new THREE.BoxGeometry(0.225, 0.04, 0.215), hair, 0, 0.12, -0.005));
+      break;
+    case 'bald':
     default:
-      hairCap(0.11, 0.85, 0.014);
+      // Classic Jordan clean-shaven dome!
+      break;
   }
-  if (hasHeadband) {
-    const headband = mesh(new THREE.CylinderGeometry(0.108, 0.108, 0.03, 12, 1, true), mat(0xffffff, { side: THREE.DoubleSide }), 0, 0.05, 0);
-    head.add(headband);
+
+  // Stumble / ankle-broken spinning pixel stars
+  const stars = new THREE.Group();
+  stars.position.y = 0.26;
+  stars.visible = false;
+  const starGeo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+  const starMat = new THREE.MeshBasicMaterial({ color: 0xffd23f });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const s = new THREE.Mesh(starGeo, starMat);
+    s.position.set(Math.cos(a) * 0.2, 0, Math.sin(a) * 0.2);
+    s.userData.noOutline = true;
+    stars.add(s);
   }
+  head.add(stars);
 
   const labelSprite = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: makeNameTexture(player.name, player.color, player.score, isSelf), transparent: true, depthTest: false })
   );
-  labelSprite.position.set(0, 1.55, 0);
+  labelSprite.position.set(0, 1.58, 0);
   labelSprite.scale.set(1.1, 0.275, 1);
   body.add(labelSprite);
-  addOutlines(body, 0.011);
+  addOutlines(body, 0.012);
 
   return {
     root,
@@ -347,6 +473,7 @@ function createBaller(player, isSelf) {
     hips,
     chest,
     head,
+    stars,
     shadow,
     legL,
     legR,
@@ -362,35 +489,33 @@ function createBaller(player, isSelf) {
 }
 
 function createBall() {
-  const tex = canvasTexture(256, 128, (ctx, w, h) => {
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#f08a3c');
-    g.addColorStop(1, '#d9661f');
-    ctx.fillStyle = g;
+  const tex = canvasTexture(32, 16, (ctx, w, h) => {
+    // Classic 2-tone NES orange basketball with chunky black pixel seams
+    ctx.fillStyle = '#e86a17';
     ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = '#1c0f06';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(0, h / 2);
-    ctx.lineTo(w, h / 2);
-    for (const x of [w * 0.25, w * 0.75]) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
+    ctx.fillStyle = '#f89030';
+    ctx.fillRect(0, 2, w, 5);
+    ctx.fillStyle = '#b84810';
+    ctx.fillRect(0, 12, w, 4);
+
+    ctx.fillStyle = '#100c08';
+    // Equator seam
+    ctx.fillRect(0, 7, w, 2);
+    // Vertical meridian seams
+    ctx.fillRect(7, 0, 2, h);
+    ctx.fillRect(23, 0, 2, h);
+    // Pixel rib curves
+    for (let x = 0; x < w; x++) {
+      const y = Math.round(7.5 + Math.sin((x / w) * Math.PI * 4) * 4.5);
+      ctx.fillRect(x, y, 1, 1);
     }
-    ctx.stroke();
-    ctx.beginPath();
-    for (let x = 0; x <= w; x += 4) {
-      const y = h / 2 + Math.sin((x / w) * Math.PI * 4) * h * 0.32;
-      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
   });
   const ball = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 24, 16),
-    toon({ map: tex, roughness: 0.75 })
+    new THREE.SphereGeometry(0.125, 10, 7),
+    toon({ map: tex })
   );
   ball.castShadow = true;
-  addOutlines(ball, 0.009);
+  addOutlines(ball, 0.01);
   return ball;
 }
 
@@ -408,6 +533,7 @@ const sfx = {
   block: () => sound.playNotes([[N.A5], [N.E5], [N.C5], [N.A4, 2]], { type: 'square', step: 0.045, gain: 0.1 }),
   steal: () => sound.playNotes([[N.E5], [N.A5], [N.E6, 2]], { type: 'square', step: 0.045, gain: 0.09 }),
   juke: () => sound.playNotes([[N.C5, 0.5], [N.G5, 0.5], [N.C6, 0.5]], { type: 'triangle', step: 0.04, gain: 0.12 }),
+  ankle: () => sound.playNotes([[N.E5, 0.6], [N.C5, 0.6], [N.G4, 0.8], [N.E4, 1.4]], { type: 'square', step: 0.045, gain: 0.09 }),
   jump: () => sound.playNotes([[N.C4, 0.5], [N.G4, 0.5], [N.C5, 0.5]], { type: 'square', step: 0.035, gain: 0.06 }),
   swipe: () => sound.playNoise({ duration: 0.08, freq: 1800, q: 1.2, gain: 0.07 }),
   bounce: () => sound.playNotes([[110, 1]], { type: 'triangle', step: 0.06, gain: 0.16 }),
@@ -418,6 +544,13 @@ const sfx = {
     [[N.C5], [N.E5], [N.G5], [N.C6, 2], [N.G5], [N.C6, 4], [0], [N.A5], [N.F5], [N.D5], [N.G5, 6]],
     { step: 0.1, gain: 0.09 }
   ),
+};
+
+const DUNK_CALLOUTS = {
+  tomahawk: 'AIR SLAM!',
+  windmill: 'WINDMILL!',
+  cradle: 'CRADLE JAM!',
+  twohand: 'MONSTER SLAM!',
 };
 
 export class PixelHoopsClient {
@@ -439,7 +572,7 @@ export class PixelHoopsClient {
     this._buildCourt(config);
     this.ball = createBall();
     this.group.add(this.ball);
-    this.ballShadow = blobShadow(0.3, 0.45);
+    this.ballShadow = pixelShadow(0.32, 0.48);
     this.group.add(this.ballShadow);
     this.ballTarget = new THREE.Vector3(0, 0.5, 0);
     sfx.tipoff();
@@ -449,43 +582,40 @@ export class PixelHoopsClient {
     const w = cfg.courtWidth;
     const d = cfg.courtDepth;
     const hoop = cfg.hoop;
-    const PX = 48; // texture pixels per board unit
-    const APRON = 0.3; // out-of-bounds border, in board units
+    // Chunky 8-bit NES resolution: 16 texels per board unit -> 192 x 128 pixel court!
+    const PX = 16;
+    const APRON = 0.35;
 
     const courtTex = canvasTexture(w * PX, d * PX, (ctx, cw, ch) => {
-      const toPx = (x, z) => [(x + w / 2) * PX, (z + d / 2) * PX];
+      const toPx = (x, z) => [Math.round((x + w / 2) * PX), Math.round((z + d / 2) * PX)];
 
-      // Maple boards running toward the hoop, with staggered joints.
-      const boardW = 0.11 * PX;
-      let seed = 7;
+      // Classic NES Jordan vs Bird hardwood: flat 4-tone ochre planks with 1px seams
+      const woodPalette = ['#e8b468', '#dc9e4e', '#f0c47a', '#d09042'];
+      const boardW = 3;
+      let seed = 17;
       const rnd = () => {
         seed = (seed * 16807) % 2147483647;
         return seed / 2147483647;
       };
-      for (let x = 0, i = 0; x < cw; x += boardW, i++) {
-        let y = -rnd() * 3 * PX;
+      for (let x = 0; x < cw; x += boardW) {
+        let y = -Math.floor(rnd() * 16);
         while (y < ch) {
-          const len = (1.6 + rnd() * 2.4) * PX;
-          const l = 62 + rnd() * 7;
-          ctx.fillStyle = `hsl(${30 + rnd() * 4}, ${52 + rnd() * 8}%, ${l}%)`;
+          const len = 14 + Math.floor(rnd() * 20);
+          ctx.fillStyle = woodPalette[Math.floor(rnd() * woodPalette.length)];
           ctx.fillRect(x, y, boardW, len);
-          ctx.fillStyle = 'rgba(110, 60, 20, 0.35)';
+          // 1px horizontal plank joint
+          ctx.fillStyle = '#8c5420';
           ctx.fillRect(x, y, boardW, 1);
           y += len;
         }
-        ctx.fillStyle = 'rgba(110, 60, 20, 0.22)';
+        // Subtle 1px vertical board seam
+        ctx.fillStyle = '#a86c2c';
         ctx.fillRect(x, 0, 1, ch);
       }
-      // Soft varnish sheen
-      const sheen = ctx.createRadialGradient(cw / 2, ch * 0.45, 10, cw / 2, ch * 0.45, cw * 0.7);
-      sheen.addColorStop(0, 'rgba(255,255,255,0.14)');
-      sheen.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = sheen;
-      ctx.fillRect(0, 0, cw, ch);
 
-      // Apron (out of bounds)
-      const ap = APRON * PX;
-      ctx.fillStyle = '#8c1d2c';
+      // NES Arena Apron (deep crimson with 1px pixel dither trim)
+      const ap = Math.round(APRON * PX);
+      ctx.fillStyle = '#a81c24';
       ctx.fillRect(0, 0, cw, ap);
       ctx.fillRect(0, ch - ap, cw, ap);
       ctx.fillRect(0, 0, ap, ch);
@@ -493,128 +623,150 @@ export class PixelHoopsClient {
 
       const [hx, hz] = toPx(hoop.x, hoop.z);
       const baseline = ap;
-      // Painted lane
-      // Key proportions follow a regulation court, scaled to the 3-point radius:
-      // free-throw line ~58% of the arc distance, circle radius ~25%, lane ~53% wide.
       const r3u = cfg.threePtRadius;
-      const laneW = r3u * 0.53 * PX;
+      const laneW = Math.round(r3u * 0.53 * PX);
       const ftDist = r3u * 0.58;
-      const ftR = r3u * 0.25 * PX;
-      const ftLine = hz + ftDist * PX;
-      ctx.fillStyle = '#8c1d2c';
-      ctx.fillRect(hx - laneW / 2, baseline, laneW, ftLine - baseline);
+      const ftR = Math.round(r3u * 0.25 * PX);
+      const ftLine = Math.round(hz + ftDist * PX);
 
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 0.05 * PX;
-      ctx.lineJoin = 'round';
-      // Lane outline + free throw circle
-      ctx.strokeRect(hx - laneW / 2, baseline, laneW, ftLine - baseline);
-      ctx.beginPath();
-      ctx.arc(hx, ftLine, ftR, 0, Math.PI);
-      ctx.stroke();
-      ctx.setLineDash([0.18 * PX, 0.14 * PX]);
-      ctx.beginPath();
-      ctx.arc(hx, ftLine, ftR, Math.PI, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      // Lane hash marks
-      for (const k of [0.4, 0.62, 0.84].map((f) => f * ftDist)) {
-        ctx.beginPath();
-        ctx.moveTo(hx - laneW / 2, hz + k * PX);
-        ctx.lineTo(hx - laneW / 2 - 0.15 * PX, hz + k * PX);
-        ctx.moveTo(hx + laneW / 2, hz + k * PX);
-        ctx.lineTo(hx + laneW / 2 + 0.15 * PX, hz + k * PX);
-        ctx.stroke();
+      // Painted NES Key with pixel checkerboard inner accent
+      const laneX = Math.round(hx - laneW / 2);
+      const laneH = ftLine - baseline;
+      ctx.fillStyle = '#b82428';
+      ctx.fillRect(laneX, baseline, laneW, laneH);
+      ctx.fillStyle = '#90181c';
+      for (let py = baseline + 2; py < ftLine - 1; py += 2) {
+        for (let px = laneX + 2; px < laneX + laneW - 1; px += 2) {
+          if (((px + py) >> 1) % 2 === 0) ctx.fillRect(px, py, 1, 1);
+        }
       }
-      // Restricted arc
-      ctx.beginPath();
-      ctx.arc(hx, hz, r3u * 0.17 * PX, 0, Math.PI);
-      ctx.stroke();
-      // Three-point line: straight corners into the arc
-      const r3 = cfg.threePtRadius * PX;
-      const cornerX = Math.min(r3 * 0.94, cw / 2 - ap - 0.25 * PX);
+
+      // Crisp 1-pixel white court lines
+      const white = '#f8f8f8';
+      ctx.fillStyle = white;
+      // Outer boundary
+      ctx.fillRect(ap, ap, cw - ap * 2, 1);
+      ctx.fillRect(ap, ch - ap - 1, cw - ap * 2, 1);
+      ctx.fillRect(ap, ap, 1, ch - ap * 2);
+      ctx.fillRect(cw - ap - 1, ap, 1, ch - ap * 2);
+
+      // Key box outline
+      ctx.fillRect(laneX, baseline, laneW, 1);
+      ctx.fillRect(laneX, ftLine, laneW, 1);
+      ctx.fillRect(laneX, baseline, 1, laneH + 1);
+      ctx.fillRect(laneX + laneW - 1, baseline, 1, laneH + 1);
+
+      // Free-throw circle (solid bottom half, dashed top half)
+      drawPixelArc(ctx, hx, ftLine, ftR, 0, Math.PI, white);
+      for (let i = 0; i < 6; i++) {
+        const a0 = Math.PI + (i / 6) * Math.PI;
+        drawPixelArc(ctx, hx, ftLine, ftR, a0, a0 + Math.PI / 10, white);
+      }
+
+      // Lane hash marks
+      for (const k of [0.4, 0.62, 0.84].map((f) => Math.round(hz + f * ftDist * PX))) {
+        ctx.fillRect(laneX - 3, k, 3, 1);
+        ctx.fillRect(laneX + laneW, k, 3, 1);
+      }
+
+      // Restricted arc under rim
+      drawPixelArc(ctx, hx, hz, Math.round(r3u * 0.17 * PX), 0, Math.PI, white);
+
+      // Three-point line (straight corners + pixel arc)
+      const r3 = Math.round(r3u * PX);
+      const cornerX = Math.min(Math.round(r3 * 0.94), Math.floor(cw / 2 - ap - 4));
       const a = Math.asin(cornerX / r3);
-      const cornerZ = hz + Math.cos(a) * r3;
-      ctx.beginPath();
-      ctx.moveTo(hx - cornerX, baseline);
-      ctx.lineTo(hx - cornerX, cornerZ);
-      ctx.arc(hx, hz, r3, Math.PI / 2 + a, Math.PI / 2 - a, true);
-      ctx.lineTo(hx + cornerX, baseline);
-      ctx.stroke();
-      // Boundary
-      ctx.strokeRect(ap, ap, cw - ap * 2, ch - ap * 2);
-      // Half-court circle with an original center logo
-      ctx.beginPath();
-      ctx.arc(cw / 2, ch - ap, 1.2 * PX, Math.PI, Math.PI * 2);
-      ctx.fillStyle = 'rgba(140, 29, 44, 0.85)';
-      ctx.fill();
-      ctx.stroke();
-      drawPixelTextCentered(ctx, 'HOOPS', cw / 2, ch - ap - 0.55 * PX, 4, '#ffd23f', '#3b0a12');
-      // Check-ball spot
+      const cornerZ = Math.round(hz + Math.cos(a) * r3);
+      ctx.fillRect(hx - cornerX, baseline, 1, cornerZ - baseline);
+      ctx.fillRect(hx + cornerX, baseline, 1, cornerZ - baseline);
+      drawPixelArc(ctx, hx, hz, r3, Math.PI / 2 - a, Math.PI / 2 + a, white);
+
+      // Half-court center circle with 8-bit 1-ON-1 emblem
+      const cr = Math.round(1.15 * PX);
+      ctx.fillStyle = '#b82428';
+      for (let py = ch - ap - cr; py < ch - ap; py++) {
+        for (let px = Math.floor(cw / 2) - cr; px <= Math.floor(cw / 2) + cr; px++) {
+          const dx = px - cw / 2;
+          const dy = py - (ch - ap);
+          if (dx * dx + dy * dy <= cr * cr) ctx.fillRect(px, py, 1, 1);
+        }
+      }
+      drawPixelArc(ctx, Math.floor(cw / 2), ch - ap, cr, Math.PI, Math.PI * 2, white);
+      drawPixelTextCentered(ctx, '1 ON 1', Math.floor(cw / 2), ch - ap - 8, 1, '#ffd23f', '#18080c');
+
+      // Check-ball pixel cross
       const [cx, cz] = toPx(cfg.checkSpot.x, cfg.checkSpot.z);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(cx, cz, 0.06 * PX, 0, Math.PI * 2);
-      ctx.fill();
-      // Apron lettering
-      drawPixelTextCentered(ctx, 'TABLETOP STREETBALL LEAGUE', cw / 2, ch - ap / 2, 2, '#ffffff');
+      ctx.fillStyle = white;
+      ctx.fillRect(cx - 1, cz, 3, 1);
+      ctx.fillRect(cx, cz - 1, 1, 3);
     });
 
-    const slab = 0.16;
-    const sideMat = toon({ color: 0x3a1f10, roughness: 0.6 });
-    const floorMat = toon({ map: courtTex, roughness: 0.38, metalness: 0.05 });
+    const slab = 0.18;
+    const sideMat = toon({ color: 0x381c10 });
+    const floorMat = toon({ map: courtTex });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w, slab, d), [sideMat, sideMat, floorMat, sideMat, sideMat, sideMat]);
     floor.position.y = -slab / 2;
     floor.receiveShadow = true;
     this.group.add(floor);
 
-    // ---- Hoop: padded base, curved support arm, glass-style board, rim and net
+    // ---- Hoop: blocky NES stanchion, pixel-dithered glass backboard, faceted rim & net
     const hoopGroup = new THREE.Group();
     this.group.add(hoopGroup);
     const bbZ = cfg.backboardZ;
     const poleZ = bbZ - 0.5;
-    const steel = toon({ color: 0x2d3340, roughness: 0.4, metalness: 0.6 });
-    const pad = toon({ color: 0x8c1d2c, roughness: 0.8 });
-    const base = mesh(new THREE.BoxGeometry(0.55, 0.22, 0.4), pad, hoop.x, 0.11, poleZ - 0.05);
-    hoopGroup.add(base);
+    const steel = toon({ color: 0x2a303e });
+    const pad = toon({ color: 0xb82428 });
+    hoopGroup.add(mesh(new THREE.BoxGeometry(0.56, 0.24, 0.42), pad, hoop.x, 0.12, poleZ - 0.05));
     const poleH = hoop.rimY + 0.35;
-    hoopGroup.add(mesh(new THREE.CylinderGeometry(0.05, 0.06, poleH, 12), steel, hoop.x, poleH / 2, poleZ));
-    hoopGroup.add(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.7, 12), pad, hoop.x, 0.55, poleZ));
-    const arm = mesh(new THREE.CylinderGeometry(0.035, 0.035, bbZ - poleZ, 8), steel, hoop.x, poleH - 0.05, (bbZ + poleZ) / 2);
-    arm.rotation.x = Math.PI / 2;
-    hoopGroup.add(arm);
+    hoopGroup.add(mesh(new THREE.BoxGeometry(0.11, poleH, 0.11), steel, hoop.x, poleH / 2, poleZ));
+    hoopGroup.add(mesh(new THREE.BoxGeometry(0.16, 0.72, 0.16), pad, hoop.x, 0.55, poleZ));
+    hoopGroup.add(mesh(new THREE.BoxGeometry(0.08, 0.08, bbZ - poleZ), steel, hoop.x, poleH - 0.05, (bbZ + poleZ) / 2));
 
-    const boardTex = canvasTexture(260, 160, (ctx, cw, ch) => {
-      ctx.fillStyle = 'rgba(235, 245, 255, 0.55)';
+    const boardTex = canvasTexture(64, 40, (ctx, cw, ch) => {
+      // NES pixel-dithered translucent glass
+      ctx.fillStyle = 'rgba(210, 236, 255, 0.65)';
       ctx.fillRect(0, 0, cw, ch);
-      ctx.strokeStyle = '#111827';
-      ctx.lineWidth = 10;
-      ctx.strokeRect(5, 5, cw - 10, ch - 10);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 6;
-      ctx.strokeRect(cw * 0.33, ch * 0.42, cw * 0.34, ch * 0.42);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      for (let y = 3; y < ch - 3; y += 2) {
+        for (let x = 3; x < cw - 3; x += 2) {
+          if (((x + y) >> 1) % 2 === 0) ctx.fillRect(x, y, 1, 1);
+        }
+      }
+      // Thick pixel border
+      ctx.fillStyle = '#090910';
+      ctx.fillRect(0, 0, cw, 3);
+      ctx.fillRect(0, ch - 3, cw, 3);
+      ctx.fillRect(0, 0, 3, ch);
+      ctx.fillRect(cw - 3, 0, 3, ch);
+      // Classic NES orange-red shooter's square
+      ctx.fillStyle = '#e83820';
+      const sx = 21, sy = 17, sw = 22, sh = 17;
+      ctx.fillRect(sx, sy, sw, 2);
+      ctx.fillRect(sx, sy + sh - 2, sw, 2);
+      ctx.fillRect(sx, sy, 2, sh);
+      ctx.fillRect(sx + sw - 2, sy, 2, sh);
     });
-    const glass = toon({ map: boardTex, transparent: true, roughness: 0.15, metalness: 0.1 });
-    const backboard = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 0.03), glass);
+    const glass = toon({ map: boardTex, transparent: true });
+    const backboard = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.82, 0.04), glass);
     backboard.position.set(hoop.x, hoop.rimY + 0.3, bbZ);
     hoopGroup.add(backboard);
 
     this.rim = new THREE.Group();
     this.rim.position.set(hoop.x, hoop.rimY, hoop.z);
-    const rimMat = toon({ color: 0xff5a1f, roughness: 0.35, metalness: 0.5 });
-    const torus = mesh(new THREE.TorusGeometry(hoop.rimRadius, 0.016, 8, 32), rimMat);
+    const rimMat = toon({ color: 0xff521b });
+    // Chunky faceted 10-sided retro rim
+    const torus = mesh(new THREE.TorusGeometry(hoop.rimRadius, 0.02, 5, 10), rimMat);
     torus.rotation.x = Math.PI / 2;
     this.rim.add(torus);
     const bracketLen = hoop.z - bbZ - hoop.rimRadius;
-    const bracket = mesh(new THREE.BoxGeometry(0.08, 0.03, bracketLen), rimMat, 0, 0, -hoop.rimRadius - bracketLen / 2);
-    this.rim.add(bracket);
+    this.rim.add(mesh(new THREE.BoxGeometry(0.09, 0.04, bracketLen), rimMat, 0, 0, -hoop.rimRadius - bracketLen / 2));
     hoopGroup.add(this.rim);
 
-    // Net: diamond lattice that narrows toward the bottom.
+    // Net: crisp retro diamond lattice
     this.net = new THREE.Group();
     this.net.position.set(hoop.x, hoop.rimY, hoop.z);
-    const rows = 5;
-    const cols = 14;
+    const rows = 4;
+    const cols = 10;
     const netDepth = 0.42;
     const pts = [];
     const ringPt = (row, col) => {
@@ -626,92 +778,109 @@ export class PixelHoopsClient {
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const p = ringPt(row, col);
-        // Each knot links to the two below it, making diamonds.
         const below = row % 2 === 0 ? [col - 1, col] : [col, col + 1];
         for (const c of below) pts.push(p, ringPt(row + 1, (c + cols) % cols));
       }
     }
     this.net.add(new THREE.LineSegments(
       new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+      new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.92 })
     ));
     hoopGroup.add(this.net);
     addOutlines(hoopGroup, 0.014);
 
-    // Dot-matrix scoreboard on top of the backboard
+    // NES Dot-Matrix Scoreboard on top of the backboard
     this.scoreCanvas = document.createElement('canvas');
     this.scoreCanvas.width = 128;
-    this.scoreCanvas.height = 48;
+    this.scoreCanvas.height = 56;
     this.scoreTex = new THREE.CanvasTexture(this.scoreCanvas);
+    this.scoreTex.magFilter = THREE.NearestFilter;
+    this.scoreTex.minFilter = THREE.NearestFilter;
+    this.scoreTex.generateMipmaps = false;
     this.scoreTex.colorSpace = THREE.SRGBColorSpace;
     const sbMat = new THREE.MeshBasicMaterial({ map: this.scoreTex });
-    const sbFrame = toon({ color: 0x111827, roughness: 0.5 });
-    const scoreboard = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 0.06), [sbFrame, sbFrame, sbFrame, sbFrame, sbMat, sbFrame]);
-    scoreboard.position.set(hoop.x, hoop.rimY + 0.98, bbZ - 0.03);
+    const sbFrame = toon({ color: 0x111420 });
+    const scoreboard = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.52, 0.08), [sbFrame, sbFrame, sbFrame, sbFrame, sbMat, sbFrame]);
+    scoreboard.position.set(hoop.x, hoop.rimY + 1.02, bbZ - 0.03);
     hoopGroup.add(scoreboard);
-    hoopGroup.add(mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.3, 6), steel, hoop.x, hoop.rimY + 0.72, bbZ - 0.05));
+    hoopGroup.add(mesh(new THREE.BoxGeometry(0.05, 0.3, 0.05), steel, hoop.x, hoop.rimY + 0.72, bbZ - 0.05));
     this.scoreKey = '';
 
-    // Sideline bench for players waiting their turn
-    const benchWood = toon({ color: 0x6b4423, roughness: 0.7 });
+    // Blocky sideline bench
+    const benchWood = toon({ color: 0x7a4b24 });
     const bx = -w / 2 + 1.9;
     const bz = d / 2 - 0.15;
-    this.group.add(mesh(new THREE.BoxGeometry(3.4, 0.05, 0.26), benchWood, bx, 0.26, bz));
+    this.group.add(mesh(new THREE.BoxGeometry(3.4, 0.06, 0.28), benchWood, bx, 0.26, bz));
     for (const ox of [-1.55, 0, 1.55]) {
-      this.group.add(mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.24, 6), steel, bx + ox, 0.12, bz));
+      this.group.add(mesh(new THREE.BoxGeometry(0.06, 0.24, 0.06), steel, bx + ox, 0.12, bz));
     }
   }
 
-  _drawScoreboard(players) {
+  _drawScoreboard(players, difficulty = 'medium') {
     const court = players.filter((p) => p.role === 'court');
-    const key = court.map((p) => `${p.id}:${p.score}`).join('|');
+    const diffLabel = difficulty === 'easy' ? 'CPU EASY' : difficulty === 'hard' ? 'CPU HARD' : 'CPU MED';
+    const key = `${court.map((p) => `${p.id}:${p.score}`).join('|')}|${diffLabel}`;
     if (key === this.scoreKey) return;
     this.scoreKey = key;
     const ctx = this.scoreCanvas.getContext('2d');
-    ctx.fillStyle = '#05060a';
-    ctx.fillRect(0, 0, 128, 48);
-    // Unlit dot grid
-    ctx.fillStyle = '#1a1c26';
-    for (let y = 1; y < 48; y += 3) for (let x = 1; x < 128; x += 3) ctx.fillRect(x, y, 2, 2);
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#080a10';
+    ctx.fillRect(0, 0, 128, 56);
+    // Crisp NES bezel border
+    ctx.fillStyle = '#384058';
+    ctx.fillRect(0, 0, 128, 2);
+    ctx.fillRect(0, 54, 128, 2);
+    ctx.fillRect(0, 0, 2, 56);
+    ctx.fillRect(126, 0, 2, 56);
+    // Unlit LED dot grid
+    ctx.fillStyle = '#181c28';
+    for (let y = 4; y < 44; y += 3) for (let x = 4; x < 124; x += 3) ctx.fillRect(x, y, 2, 2);
+
     [court[0], court[1]].forEach((p, i) => {
       if (!p) return;
       const x0 = i === 0 ? 6 : 70;
       ctx.fillStyle = p.color;
-      ctx.fillRect(x0, 4, 52, 5);
+      ctx.fillRect(x0, 5, 52, 5);
       const s = String(p.score);
       const textW = s.length * 16 - 4;
       drawPixelNumber(ctx, s, x0 + 26 - textW / 2, 15, 4, '#ffd23f');
     });
     ctx.fillStyle = '#ff3b30';
     ctx.fillRect(62, 20, 4, 4);
-    ctx.fillRect(62, 31, 4, 4);
+    ctx.fillRect(62, 30, 4, 4);
+
+    // Bottom status bar with CPU difficulty mode
+    ctx.fillStyle = '#121622';
+    ctx.fillRect(3, 43, 122, 10);
+    const diffColor = difficulty === 'hard' ? '#ff5a5f' : difficulty === 'easy' ? '#4ade80' : '#38bdf8';
+    drawPixelTextCentered(ctx, diffLabel, 64, 48, 1, diffColor);
     this.scoreTex.needsUpdate = true;
   }
 
-  _burst(x, y, z, color, count = 10, speed = 2.6, size = 0.06) {
-    const geo = new THREE.OctahedronGeometry(size * 0.7, 0);
+  _burst(x, y, z, color, count = 10, speed = 2.6, size = 0.065) {
+    // Chunky 8-bit 3D pixel cubes!
+    const geo = new THREE.BoxGeometry(size, size, size);
     for (let i = 0; i < count; i++) {
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
       m.position.set(x, y, z);
       const a = Math.random() * Math.PI * 2;
       const spd = (0.4 + Math.random() * 0.8) * speed;
       this.group.add(m);
-      this.particles.push({ mesh: m, vx: Math.cos(a) * spd, vy: (0.5 + Math.random()) * speed * 0.7, vz: Math.sin(a) * spd, life: 0.5 + Math.random() * 0.3, maxLife: 0.8 });
+      this.particles.push({ mesh: m, vx: Math.cos(a) * spd, vy: (0.5 + Math.random()) * speed * 0.7, vz: Math.sin(a) * spd, life: 0.45 + Math.random() * 0.25, maxLife: 0.7 });
     }
   }
 
   _popup(text, color, x, y, z) {
     const tex = canvasTexture(128, 32, (ctx) => {
       const scale = pixelTextWidth(text, 3) <= 120 ? 3 : 2;
-      // Thick arcade outline: stamp the text in black around itself.
       for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [2, 2]]) {
-        drawPixelTextCentered(ctx, text, 64 + ox * scale, 16 + oy * scale, scale, '#0b0b14');
+        drawPixelTextCentered(ctx, text, 64 + ox * scale, 16 + oy * scale, scale, '#090910');
       }
       drawPixelTextCentered(ctx, text, 64, 16, scale, color);
-    }, { smooth: false });
+    });
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     sprite.position.set(x, y, z);
-    sprite.scale.set(1.8, 0.45, 1);
+    sprite.scale.set(1.85, 0.46, 1);
     this.group.add(sprite);
     this.popups.push({ sprite, life: 1.3 });
   }
@@ -752,7 +921,7 @@ export class PixelHoopsClient {
     this.ballTarget.set(state.ball.x, state.ball.y, state.ball.z);
     this.ballState = state.ball.state;
     this.ballSpin = state.ball.spin;
-    this._drawScoreboard(state.players);
+    this._drawScoreboard(state.players, state.botDifficulty || this.config.botDifficulty || 'medium');
 
     // Controls follow possession: offense = JUKE / SHOOT, defense = BLOCK / STEAL.
     const me = state.players.find((p) => p.id === this.selfPlayerId);
@@ -770,8 +939,15 @@ export class PixelHoopsClient {
       switch (ev.type) {
         case 'score': {
           this.netShake = 1;
-          this._burst(hoop.x, hoop.rimY - 0.2, hoop.z, ev.color, ev.dunk ? 24 : 14, 2.4);
-          this._popup(ev.dunk ? 'SLAM!' : ev.points === 3 ? '3 PTS!' : '2 PTS', ev.color, hoop.x, hoop.rimY + 0.7, hoop.z + 0.4);
+          this._burst(hoop.x, hoop.rimY - 0.2, hoop.z, ev.color, ev.dunk ? 24 : 14, 2.5);
+          const label = ev.dunk
+            ? (DUNK_CALLOUTS[ev.dunkStyle] || 'SLAM!')
+            : ev.fadeaway
+              ? (ev.points === 3 ? 'FADE 3!' : 'FADEAWAY!')
+              : ev.points === 3
+                ? '3 PTS!'
+                : '2 PTS';
+          this._popup(label, ev.color, hoop.x, hoop.rimY + 0.72, hoop.z + 0.4);
           sfx.swish();
           if (ev.dunk) sfx.slam();
           else if (ev.points === 3) sfx.three();
@@ -780,15 +956,17 @@ export class PixelHoopsClient {
         }
         case 'rim_shake':
           this.rimShake = 1;
+          // Monster dunk rim sparks
+          this._burst(hoop.x, hoop.rimY, hoop.z, 0xffd23f, 8, 2.0, 0.05);
           break;
         case 'clank':
           this.rimShake = 0.6;
-          this._burst(ev.x, ev.y, ev.z, 0xff5a1f, 6, 1.6, 0.04);
+          this._burst(ev.x, ev.y, ev.z, 0xff521b, 6, 1.6, 0.045);
           sfx.clank();
           break;
         case 'block':
           this._burst(ev.x, ev.y, ev.z, 0xffffff, 12, 3.0);
-          this._popup('BLOCKED!', '#ff3b30', ev.x, ev.y + 0.6, ev.z);
+          this._popup('SWATTED!', '#ff3b30', ev.x, ev.y + 0.6, ev.z);
           sfx.block();
           break;
         case 'steal':
@@ -796,11 +974,19 @@ export class PixelHoopsClient {
           this._popup('STEAL!', '#ffd23f', ev.x, 1.6, ev.z);
           sfx.steal();
           break;
+        case 'ankle_break':
+          this._burst(ev.x, 0.12, ev.z, 0xffd23f, 8, 2.0, 0.055);
+          this._popup('ANKLES!', '#ffd23f', ev.x, 1.55, ev.z);
+          sfx.ankle();
+          break;
         case 'swipe':
           if (ev.playerId === this.selfPlayerId) sfx.swipe();
           break;
         case 'juke':
-          this._burst(ev.x, 0.05, ev.z, 0xe2e8f0, 6, 1.4, 0.05);
+          this._burst(ev.x, 0.05, ev.z, 0xe2e8f0, 7, 1.5, 0.055);
+          if (ev.variant === 'spin') {
+            this._popup('SPIN!', '#38bdf8', ev.x, 1.5, ev.z);
+          }
           if (ev.playerId === this.selfPlayerId) sfx.juke();
           break;
         case 'jump':
@@ -810,7 +996,7 @@ export class PixelHoopsClient {
           break;
         case 'shot':
           if (ev.playerId === this.selfPlayerId && ev.timing > 0.85) {
-            this._popup('PERFECT', '#4ade80', ev.x, ev.y + 0.5, ev.z);
+            this._popup(ev.fadeaway ? 'PURE FADE!' : 'PERFECT!', '#4ade80', ev.x, ev.y + 0.52, ev.z);
             sfx.perfect();
           }
           break;
@@ -847,107 +1033,260 @@ export class PixelHoopsClient {
     if (!p) return;
     const air = vis.body.position.y > 0.05;
     const running = p.speed > 0.2 && !air;
-    const ph = p.animPhase;
+    // Stepped 8-bit NES animation cadence (4 crisp frames per stride!)
+    const steppedPh = stepPhase(p.animPhase, 4);
+    const steppedTime = Math.floor(time * 9) / 9;
     const onDefense = p.role === 'court' && !p.onOffense && !p.hasBall;
+    const hand = p.dribbleHand || 1;
+    const prog = p.moveProgress || 0;
 
     // ---- Lower body
     let crouch = 0;
     let lean = 0;
+    let twist = 0;
     let spread = 0;
     const legs = { L: { hip: 0, knee: 0 }, R: { hip: 0, knee: 0 } };
-    if (air) {
-      legs.L = { hip: -0.55, knee: 1.0 };
-      legs.R = { hip: -0.15, knee: 0.45 };
-    } else if (running) {
-      const s = Math.sin(ph);
-      legs.L = { hip: s * 0.75, knee: 0.25 + Math.max(0, Math.sin(ph + 1.6)) * 1.1 };
-      legs.R = { hip: -s * 0.75, knee: 0.25 + Math.max(0, Math.sin(ph + 1.6 + Math.PI)) * 1.1 };
-      lean = 0.12;
-    }
-    if (p.hasBall && !air) { crouch = 0.35; lean += 0.1; }
-    if (onDefense && !air && p.action !== 'steal') { crouch = 0.8; spread = 0.22; lean = 0.18; }
-    if (p.action === 'stumble') lean = 0.35 + Math.sin(time * 25) * 0.08;
 
-    const bend = crouch * 0.55;
+    if (p.action === 'dunk') {
+      // Iconic Jordan vs Bird midair dunk silhouettes!
+      if (p.moveVariant === 'tomahawk') {
+        // Air Jordan Jumpman wide-scissor flight!
+        legs.L = { hip: -0.75, knee: 0.45 };
+        legs.R = { hip: 0.65, knee: 0.55 };
+        lean = 0.18;
+      } else if (p.moveVariant === 'twohand') {
+        // Power two-hand knee-tuck
+        legs.L = { hip: -0.85, knee: 1.5 };
+        legs.R = { hip: -0.85, knee: 1.5 };
+        lean = 0.22;
+      } else if (p.moveVariant === 'windmill') {
+        legs.L = { hip: -0.55, knee: 0.9 };
+        legs.R = { hip: 0.35, knee: 0.8 };
+        lean = 0.14;
+      } else {
+        // Cradle tuck -> stretch
+        legs.L = { hip: -0.6, knee: 1.1 };
+        legs.R = { hip: -0.25, knee: 0.65 };
+        lean = 0.16;
+      }
+    } else if (p.action === 'shoot' && p.moveVariant === 'fadeaway') {
+      // Iconic Bird/Jordan lean-back fadeaway with front leg kicked for balance
+      legs.L = { hip: -0.55, knee: 0.2 };
+      legs.R = { hip: 0.15, knee: 0.45 };
+      lean = -0.44;
+    } else if (p.action === 'block') {
+      // NES vertical swat block: legs kicked back/tucked
+      legs.L = { hip: 0.25, knee: 1.05 };
+      legs.R = { hip: -0.15, knee: 0.9 };
+      lean = -0.06;
+    } else if (air) {
+      // Standard jump-shot airborne tuck
+      legs.L = { hip: -0.45, knee: 0.85 };
+      legs.R = { hip: -0.15, knee: 0.45 };
+    } else if (p.action === 'crossover') {
+      // Low wide crossover lunge
+      crouch = 0.95;
+      spread = 0.34;
+      lean = 0.28;
+      twist = hand * 0.45;
+      legs.L = { hip: -0.35 * hand, knee: 0.35 };
+      legs.R = { hip: 0.35 * hand, knee: 0.35 };
+    } else if (p.action === 'spin') {
+      // Tight crouched 360° spin move
+      crouch = 0.85;
+      lean = 0.22;
+      legs.L = { hip: -0.3, knee: 0.4 };
+      legs.R = { hip: 0.3, knee: 0.4 };
+    } else if (p.action === 'steal') {
+      // Low forward swipe lunge
+      crouch = 0.9;
+      lean = 0.42;
+      legs.L = { hip: -0.55, knee: 0.5 };
+      legs.R = { hip: 0.45, knee: 0.2 };
+    } else if (running) {
+      // Crisp 4-frame NES running stride
+      const s = Math.sin(steppedPh);
+      legs.L = { hip: s * 0.82, knee: 0.22 + Math.max(0, Math.sin(steppedPh + 1.57)) * 1.15 };
+      legs.R = { hip: -s * 0.82, knee: 0.22 + Math.max(0, Math.sin(steppedPh + 4.71)) * 1.15 };
+      lean = 0.14;
+    }
+
+    if (p.hasBall && !air && p.action === 'dribble') {
+      crouch = Math.max(crouch, 0.45);
+      lean += 0.12;
+    }
+    if (onDefense && !air && p.action !== 'steal' && p.action !== 'stumble') {
+      crouch = 0.88;
+      spread = 0.28;
+      lean = 0.2;
+    }
+    if (p.action === 'stumble') {
+      lean = 0.38 + Math.sin(steppedTime * 22) * 0.14;
+      twist = Math.sin(steppedTime * 18) * 0.3;
+    }
+    if (p.action === 'celebrate' && !air) {
+      // Snappy 2-frame NES victory hop
+      const hop = Math.floor(time * 8) % 2;
+      vis.body.position.y += hop * 0.1;
+    }
+
+    const bend = crouch * 0.52;
     for (const [key, leg] of [['L', vis.legL], ['R', vis.legR]]) {
       const side = key === 'L' ? 1 : -1;
       const hip = legs[key].hip - bend;
       const knee = legs[key].knee + bend * 2;
       leg.hip.rotation.set(hip, 0, side * spread);
       leg.knee.rotation.x = knee;
-      leg.foot.rotation.x = air ? 0.5 : -(hip + knee) * 0.9;
+      leg.foot.rotation.x = air ? 0.45 : -(hip + knee) * 0.85;
       leg.foot.rotation.z = -side * spread;
     }
-    vis.hips.position.y = 0.56 - (1 - Math.cos(bend)) * 0.5 - spread * 0.05;
-    vis.hips.rotation.x = lean;
+    vis.hips.position.y = 0.56 - (1 - Math.cos(bend)) * 0.48 - spread * 0.05;
+    vis.hips.rotation.set(lean, twist, 0);
 
     // ---- Upper body: [shoulderX, shoulderZ(outward), elbow]
-    let L = [0.08, 0.12, -0.15];
-    let R = [0.08, 0.12, -0.15];
-    const wave = Math.sin(time * 16);
+    let L = [0.08, 0.14, -0.15];
+    let R = [0.08, 0.14, -0.15];
+    const wave = Math.sin(steppedTime * 16);
+
     switch (p.action) {
       case 'shoot':
-        L = [-2.35, 0.25, -0.9];
-        R = [-2.55, 0.1, -1.0];
+        if (p.followThrough) {
+          // Gooseneck follow-through after release
+          L = [-2.2, 0.22, -0.45];
+          R = [-2.05, 0.08, -0.15];
+        } else {
+          // Classic NES high-set two-hand rise
+          L = [-2.45, 0.28, -0.95];
+          R = [-2.7, 0.1, -1.15];
+        }
         break;
       case 'dunk':
-        L = [-2.4, 0.35, -0.2];
-        R = [-3.0, 0.05, -0.1];
+        if (p.moveVariant === 'windmill') {
+          // Full 360° vertical windmill arm swing!
+          const rot = -0.6 - prog * Math.PI * 2;
+          R = [rot, 0.15, -0.15];
+          L = [-1.4, 0.75, -0.35];
+        } else if (p.moveVariant === 'tomahawk') {
+          // Air Jordan cock-back -> hammer slam!
+          const slam = prog < 0.65 ? -3.45 : -2.25;
+          R = [slam, 0.12, prog < 0.65 ? -0.45 : -0.1];
+          L = [-1.2, 0.95, -0.25];
+        } else if (p.moveVariant === 'cradle') {
+          // Low hip cradle -> explosive one-hand reach
+          if (prog < 0.45) {
+            R = [-0.65, 0.35, -1.35];
+            L = [-0.8, 0.5, -0.6];
+          } else {
+            R = [-3.05, 0.08, -0.1];
+            L = [-1.5, 0.6, -0.3];
+          }
+        } else {
+          // Power two-hand jam
+          const slam = prog < 0.7 ? -3.15 : -2.1;
+          L = [slam, 0.2, -0.2];
+          R = [slam, 0.2, -0.2];
+        }
+        break;
+      case 'crossover':
+        // Whip arm low across body, off-arm balancing
+        if (hand === 1) {
+          R = [-0.95, 0.1, -0.55];
+          L = [-0.45, 0.85, -0.75];
+        } else {
+          L = [-0.95, 0.1, -0.55];
+          R = [-0.45, 0.85, -0.75];
+        }
+        break;
+      case 'spin':
+        // Elbows tucked tight protecting the ball during 360° spin
+        L = [-0.9, 0.45, -1.25];
+        R = [-0.9, 0.45, -1.25];
         break;
       case 'block':
-        L = [-3.0, 0.25, 0];
-        R = [-3.0, 0.25, 0];
+        L = [-3.05, 0.22, -0.05];
+        R = [-3.05, 0.22, -0.05];
         break;
       case 'steal':
-        L = [-0.4, 0.3, -0.3];
-        R = [-1.35, 0.15, -0.15];
+        L = [-0.35, 0.45, -0.4];
+        R = [-1.55, 0.1, -0.08];
         break;
-      case 'celebrate':
-        L = [-2.8 + wave * 0.25, 0.5, -0.3];
-        R = [-2.8 - wave * 0.25, 0.5, -0.3];
+      case 'celebrate': {
+        const up = Math.floor(time * 8) % 2 === 0;
+        L = [up ? -3.05 : -2.3, 0.55, up ? -0.15 : -0.75];
+        R = [up ? -3.05 : -2.3, 0.55, up ? -0.15 : -0.75];
         break;
+      }
       case 'stumble':
-        L = [-1.2 + wave * 0.6, 0.9, -0.4];
-        R = [-0.6 - wave * 0.6, 0.9, -0.4];
+        L = [-1.25 + wave * 0.65, 0.95, -0.45];
+        R = [-0.65 - wave * 0.65, 0.95, -0.45];
         break;
       default:
-        if (p.hasBall) {
-          const bounce = Math.abs(Math.sin(ph * 1.6));
-          R = [-0.55 + bounce * 0.35, 0.25, -0.75 + bounce * 0.3];
-          L = [-0.95, 0.55, -0.9];
+        if (p.followThrough) {
+          L = [-2.0, 0.2, -0.4];
+          R = [-1.95, 0.08, -0.12];
+        } else if (p.hasBall) {
+          // Crisp 2-frame NES dribble pat on active hand, shield arm on opposite side
+          const pat = Math.floor((p.animPhase * 1.6) / (Math.PI / 2)) % 2;
+          const dribArm = [-0.45 - pat * 0.35, 0.24, -0.6 - pat * 0.45];
+          const guardArm = [-0.95, 0.62, -0.95];
+          if (hand === 1) {
+            R = dribArm;
+            L = guardArm;
+          } else {
+            L = dribArm;
+            R = guardArm;
+          }
         } else if (onDefense) {
-          const shuffle = running ? Math.sin(ph) * 0.1 : 0;
-          L = [-0.35, 1.15 + shuffle, -0.5];
-          R = [-0.35, 1.15 - shuffle, -0.5];
+          // Wide NES defensive stance with choppy hands
+          const chop = Math.floor(time * 7) % 2 === 0 ? 0.14 : -0.14;
+          L = [-0.42, 1.2 + chop, -0.55];
+          R = [-0.42, 1.2 - chop, -0.55];
         } else if (running) {
-          const s = Math.sin(ph);
-          L = [-s * 0.7, 0.12, -0.9];
-          R = [s * 0.7, 0.12, -0.9];
+          const s = Math.sin(steppedPh);
+          L = [-s * 0.78, 0.15, -0.95];
+          R = [s * 0.78, 0.15, -0.95];
         }
     }
+
     vis.armL.shoulder.rotation.set(L[0], 0, L[1]);
     vis.armL.elbow.rotation.x = L[2];
     vis.armR.shoulder.rotation.set(R[0], 0, -R[1]);
     vis.armR.elbow.rotation.x = R[2];
-    vis.head.rotation.x = -lean * 0.8 + (p.action === 'shoot' || p.action === 'dunk' ? -0.25 : 0);
+    vis.head.rotation.x = -lean * 0.75 + (p.action === 'shoot' || p.action === 'dunk' ? -0.25 : 0);
+
+    // Spinning pixel stars when stumbling / ankles broken
+    if (vis.stars) {
+      vis.stars.visible = p.action === 'stumble';
+      if (vis.stars.visible) {
+        vis.stars.rotation.y = steppedTime * 10;
+      }
+    }
   }
 
   update(dt) {
     const time = performance.now() / 1000;
-    const smooth = Math.min(1, dt * 18);
+    const smooth = Math.min(1, dt * 20);
     for (const vis of this.visuals.values()) {
       vis.root.position.x += (vis.targetX - vis.root.position.x) * smooth;
       vis.root.position.z += (vis.targetZ - vis.root.position.z) * smooth;
       vis.body.position.y += (vis.targetY - vis.body.position.y) * smooth;
-      let diff = vis.targetYaw - vis.body.rotation.y;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      vis.body.rotation.y += diff * smooth;
+      const p = vis.state;
+      // During a 360° spin move, spin the character cleanly around Y!
+      const spinExtra = p && p.action === 'spin' ? (p.moveProgress || 0) * Math.PI * 2 : 0;
+      const targetYaw = vis.targetYaw + spinExtra;
+      if (p && p.action === 'spin') {
+        vis.body.rotation.y = targetYaw;
+      } else {
+        let diff = vis.targetYaw - vis.body.rotation.y;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        vis.body.rotation.y += diff * smooth;
+      }
       vis.shadow.scale.setScalar(Math.max(0.45, 1 - vis.body.position.y * 0.3));
       this._animateBaller(vis, dt, time);
     }
 
-    // Ball: snappier smoothing so the dribble keeps its bounce.
+    // Ball: snappier smoothing so the dribble keeps its crisp NES bounce.
     const bs = Math.min(1, dt * 28);
     this.ball.position.lerp(this.ballTarget, bs);
     this.ball.rotation.x = this.ballSpin || 0;
@@ -966,7 +1305,7 @@ export class PixelHoopsClient {
     }
     if (this.rimShake > 0) {
       this.rimShake = Math.max(0, this.rimShake - dt * 2.5);
-      this.rim.rotation.x = Math.sin(time * 60) * 0.12 * this.rimShake;
+      this.rim.rotation.x = Math.sin(time * 60) * 0.14 * this.rimShake;
     } else {
       this.rim.rotation.x = 0;
     }
