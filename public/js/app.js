@@ -33,7 +33,6 @@ const els = {
   arStatusDot: document.getElementById('arStatusDot'),
   arStatusText: document.getElementById('arStatusText'),
   motionBtn: document.getElementById('motionBtn'),
-  lockBtn: document.getElementById('lockBtn'),
   replaceBtn: document.getElementById('replaceBtn'),
   modeBtn: document.getElementById('modeBtn'),
   menuBtn: document.getElementById('menuBtn'),
@@ -85,6 +84,10 @@ const els = {
   shootBadge: document.getElementById('shootBadge'),
   anchorPrompt: document.getElementById('anchorPrompt'),
   promptMotionBtn: document.getElementById('promptMotionBtn'),
+  placeConfirmBar: document.getElementById('placeConfirmBar'),
+  placeConfirmText: document.getElementById('placeConfirmText'),
+  confirmPlayBtn: document.getElementById('confirmPlayBtn'),
+  adjustBoardBtn: document.getElementById('adjustBoardBtn'),
 };
 
 const savedBotDifficulty = (() => {
@@ -151,6 +154,36 @@ function sendRelay(payload) {
   ws.send(JSON.stringify(payload));
 }
 
+function needsArPlacement() {
+  return arTracker.mode === 'ar' && (!arTracker.anchor || !arTracker.locked);
+}
+
+function syncPlayUi() {
+  const lobbyOpen = !els.lobbyModal.classList.contains('hidden');
+  const inAr = arTracker.mode === 'ar';
+  const placedUnpinned = inAr && Boolean(arTracker.anchor) && !arTracker.locked;
+
+  // Show confirmation bar right after placing/moving the AR board.
+  const showConfirm = !lobbyOpen && placedUnpinned;
+  els.placeConfirmBar.classList.toggle('hidden', !showConfirm);
+  if (showConfirm) {
+    if (clientGame) {
+      const midRound = Boolean(hostController.activeEngine && hostController.activeEngine.roundTime > 0.15);
+      els.confirmPlayBtn.textContent = isSelfHost()
+        ? (midRound ? 'Resume Game' : 'Start Game')
+        : 'Play Here';
+      els.placeConfirmText.textContent = 'Board placed! Tap table to adjust, or tap below to play.';
+    } else {
+      els.confirmPlayBtn.textContent = 'Choose a Game';
+      els.placeConfirmText.textContent = 'Board placed! Pin it here and pick a game to play.';
+    }
+  }
+
+  // Only show touch controls when a game is active, lobby is closed, and board is ready.
+  const readyToPlay = Boolean(clientGame) && !lobbyOpen && (!inAr || arTracker.locked);
+  els.touchOverlay.classList.toggle('hidden', !readyToPlay);
+}
+
 function handleGameStarted(msg) {
   if (clientGame) {
     clientGame.dispose();
@@ -161,7 +194,7 @@ function handleGameStarted(msg) {
   resetActionButtons();
   els.lobbyModal.classList.add('hidden');
   els.roundBanner.classList.add('hidden');
-  els.touchOverlay.classList.remove('hidden');
+  syncPlayUi();
   maybeShowHomeScreenTip();
 }
 
@@ -172,8 +205,8 @@ function handleReturnedLobby() {
   }
   currentGameId = null;
   els.roundBanner.classList.add('hidden');
-  els.touchOverlay.classList.add('hidden');
   els.lobbyModal.classList.remove('hidden');
+  syncPlayUi();
 }
 
 const hostController = new HostController({
@@ -200,16 +233,18 @@ const arTracker = new ARTracker({
           ? 'anchored'
           : 'searching'
     );
-    els.modeBtn.textContent = status.mode === 'preview' ? 'AR Cam' : 'Preview';
+    els.modeBtn.textContent = status.mode === 'preview' ? 'AR Cam' : '3D View';
     els.motionBtn.style.display = status.mode === 'ar' && status.needsMotionPermission ? 'inline-flex' : 'none';
     els.promptMotionBtn.classList.toggle('hidden', !(status.mode === 'ar' && status.needsMotionPermission));
-    els.lockBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
-    els.lockBtn.textContent = status.locked ? 'Unlock' : 'Lock';
-    els.lockBtn.classList.toggle('active', Boolean(status.locked));
     els.replaceBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
 
     const showPrompt = status.mode === 'ar' && !status.anchored;
     els.anchorPrompt.classList.toggle('hidden', !showPrompt);
+    // If switching into 3D View while paused for AR placement, auto-resume!
+    if (status.mode === 'preview' && isSelfHost() && hostController.paused) {
+      hostController.setPaused(false);
+    }
+    syncPlayUi();
   },
 });
 
@@ -737,7 +772,9 @@ els.startGameBtn.addEventListener('click', () => {
   autoFullscreen();
   sound.unlock();
   arTracker.requestMotionPermission();
-  if (isSelfHost()) hostController.startGame();
+  if (isSelfHost()) {
+    hostController.startGame(undefined, { startPaused: needsArPlacement() });
+  }
 });
 
 els.addBotBtn.addEventListener('click', () => {
@@ -762,7 +799,9 @@ els.difficultyGroup.addEventListener('click', (e) => {
 els.nextRoundBtn.addEventListener('click', () => {
   autoFullscreen();
   sound.unlock();
-  if (isSelfHost()) hostController.startGame();
+  if (isSelfHost()) {
+    hostController.startGame(undefined, { startPaused: needsArPlacement() });
+  }
 });
 
 els.backLobbyBtn.addEventListener('click', () => {
@@ -782,21 +821,38 @@ els.promptMotionBtn.addEventListener('click', () => {
 els.menuBtn.addEventListener('click', () => {
   arTracker.requestMotionPermission();
   els.lobbyModal.classList.toggle('hidden');
+  syncPlayUi();
 });
 
 els.closeLobbyBtn.addEventListener('click', () => {
   arTracker.requestMotionPermission();
   els.lobbyModal.classList.add('hidden');
+  syncPlayUi();
 });
 
-els.lockBtn.addEventListener('click', () => {
+function beginMoveBoard() {
   arTracker.requestMotionPermission();
-  arTracker.setLocked(!arTracker.locked);
-});
-
-els.replaceBtn.addEventListener('click', () => {
-  arTracker.requestMotionPermission();
+  if (isSelfHost() && hostController.activeEngine) {
+    hostController.setPaused(true);
+  }
   arTracker.replaceBoard();
+  syncPlayUi();
+}
+
+els.replaceBtn.addEventListener('click', beginMoveBoard);
+els.adjustBoardBtn.addEventListener('click', beginMoveBoard);
+
+els.confirmPlayBtn.addEventListener('click', () => {
+  autoFullscreen();
+  sound.unlock();
+  arTracker.requestMotionPermission();
+  arTracker.setLocked(true);
+  if (!clientGame) {
+    els.lobbyModal.classList.remove('hidden');
+  } else if (isSelfHost()) {
+    hostController.setPaused(false);
+  }
+  syncPlayUi();
 });
 
 els.modeBtn.addEventListener('click', async () => {

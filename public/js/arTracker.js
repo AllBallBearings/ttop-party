@@ -297,11 +297,9 @@ export class ARTracker {
 
   setLocked(locked) {
     this.locked = Boolean(locked);
-    // Locked: keep the board exactly where it is in the room (tracking keeps
-    // running); unlocked: marker sightings refine its position again.
     this.marker.frozen = this.locked;
     this._emitStatus({
-      message: this.locked ? 'Board locked in place' : 'Live tracking — board follows the QR anchor',
+      message: this.locked ? 'Board pinned' : 'Tap table to adjust board',
     });
   }
 
@@ -318,7 +316,7 @@ export class ARTracker {
     this.marker.anchor = null;
     this.marker.state = 'searching';
     this.boardPivot.visible = false;
-    this._emitStatus({ message: 'Point at the printed QR — or tap the table to place the board' });
+    this._emitStatus({ message: 'Tap table or scan QR to place board' });
   }
 
   setBoardScale(scale) {
@@ -333,18 +331,18 @@ export class ARTracker {
     const anchored = !!this.anchor;
     const stale = anchored && this.anchorSource === 'marker' && !this.markerVisible;
     let message;
-    if (this.mode === 'preview') message = 'Tabletop Preview Mode';
+    if (this.mode === 'preview') message = '3D Tabletop View';
     else if (!this.cameraStarted) message = 'Starting camera...';
-    else if (reason === 'RELOCALIZING') message = 'Tracking lost — point back at the table';
+    else if (reason === 'RELOCALIZING') message = 'Point back at the table';
     else if (!anchored) {
       message = tracking === 'NORMAL'
-        ? 'Point at the printed QR — or tap the table to place the board'
-        : 'Point the camera at the table';
-    } else if (this.locked) message = 'Board locked in place';
-    else if (tracking !== 'NORMAL') message = 'Move slowly — limited tracking';
+        ? 'Tap table or scan QR to place board'
+        : 'Point camera at the table';
+    } else if (this.locked) message = 'Board pinned';
+    else if (tracking !== 'NORMAL') message = 'Move slowly';
     else message = this.anchorSource === 'marker'
-      ? (stale ? 'Board anchored (QR out of view)' : 'QR Anchor locked')
-      : 'Board placed on table';
+      ? (stale ? 'Board placed (QR)' : 'QR board placed')
+      : 'Board placed — tap to adjust';
     this.onStatus({
       mode: this.mode,
       anchored,
