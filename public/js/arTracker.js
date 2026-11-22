@@ -305,6 +305,22 @@ export class ARTracker {
     });
   }
 
+  replaceBoard() {
+    if (this.mode !== 'ar') return;
+    if (this.anchor) {
+      this.engine.removeAnchor(this.anchor);
+      this.anchor = null;
+    }
+    this.anchorSource = null;
+    this.markerVisible = false;
+    this.locked = false;
+    this.marker.frozen = false;
+    this.marker.anchor = null;
+    this.marker.state = 'searching';
+    this.boardPivot.visible = false;
+    this._emitStatus({ message: 'Point at the printed QR — or tap the table to place the board' });
+  }
+
   setBoardScale(scale) {
     this.boardScale = Math.max(0.5, Math.min(2.0, Number(scale) || 1.0));
     this._applyBoardScale();
