@@ -31,20 +31,30 @@
         <span id="arStatusText">Starting camera...</span>
       </div>
       <button id="motionBtn" class="pill-btn accent" type="button" style="display:none;">Enable Motion</button>
-      <button id="lockBtn" class="pill-btn" type="button" style="display:none;">Lock</button>
-      <button id="replaceBtn" class="pill-btn" type="button" style="display:none;">Re-place</button>
-      <button id="modeBtn" class="pill-btn" type="button">Preview</button>
+      <button id="replaceBtn" class="pill-btn" type="button" style="display:none;">Move Board</button>
+      <button id="modeBtn" class="pill-btn" type="button">3D View</button>
       <button id="fullscreenBtn" class="pill-btn" type="button" aria-label="Toggle fullscreen">Fullscreen</button>
-      <button id="menuBtn" class="pill-btn accent" type="button">Suite</button>
+      <button id="menuBtn" class="pill-btn accent" type="button">Games</button>
     </div>
   </header>
 
   <!-- Center prompt when waiting for QR Anchor -->
   <div id="anchorPrompt" class="anchor-prompt hidden">
     <div class="anchor-reticle"></div>
-    <p>Point camera at the printed <strong>QR Anchor</strong> on the table<br />or <strong>tap the table</strong> to place the board (solo)</p>
+    <p><strong>Tap the table</strong> to place the game board<br />or point at the printed <strong>QR Anchor</strong></p>
     <button id="promptMotionBtn" class="primary-btn hidden" type="button">Tap to Enable 360° Motion</button>
     <a href="./anchor.html" target="_blank" class="anchor-link">Open Printable QR Anchor</a>
+  </div>
+
+  <!-- Confirmation bar right after placing or moving the AR board -->
+  <div id="placeConfirmBar" class="place-confirm-bar hidden">
+    <div class="place-confirm-card">
+      <div id="placeConfirmText" class="place-confirm-text">Board placed! Tap elsewhere to adjust, or tap Start Game.</div>
+      <div class="place-confirm-actions">
+        <button id="confirmPlayBtn" class="primary-btn" type="button">Start Game</button>
+        <button id="adjustBoardBtn" class="secondary-btn" type="button">Move Board</button>
+      </div>
+    </div>
   </div>
 
   <!-- On-screen Touch Controls (Left: Analog Stick | Right: Jump then Shoot near right edge) -->
@@ -87,18 +97,18 @@
       <h2 id="roundBannerTitle">Winner!</h2>
       <p id="roundBannerSub"></p>
       <div id="roundHostActions" class="round-actions hidden">
-        <button id="nextRoundBtn" class="primary-btn" type="button">Next Round</button>
-        <button id="backLobbyBtn" class="secondary-btn" type="button">Game Suite</button>
+        <button id="nextRoundBtn" class="primary-btn" type="button">Play Again</button>
+        <button id="backLobbyBtn" class="secondary-btn" type="button">Games</button>
       </div>
     </div>
   </div>
 
-  <!-- Game Suite Lobby Modal -->
+  <!-- Games Main Screen Modal -->
   <div id="lobbyModal" class="modal-backdrop">
     <div class="lobby-card">
       <div class="lobby-header">
         <div>
-          <h1>Tabletop AR Suite</h1>
+          <h1>Tabletop AR Games</h1>
           <div id="roleBadge" class="role-badge">Connecting...</div>
         </div>
         <div class="header-actions">
@@ -122,7 +132,7 @@
 
       <div class="lobby-body">
         <div class="lobby-col">
-          <div class="section-label">Mini-Game Suite</div>
+          <div class="section-label">Choose a Game</div>
           <div id="gameGrid" class="game-grid"></div>
 
           <div class="scale-row">

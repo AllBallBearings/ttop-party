@@ -29,6 +29,7 @@ export class HostController {
     this.botCounter = 0;
     this.winsById = new Map();
     this.activeEngine = null;
+    this.paused = false;
     this.tickTimer = null;
     this.lastTickAt = 0;
     // Pixel Hoops: winner stays on, everyone else waits in line.
@@ -138,12 +139,20 @@ export class HostController {
     this._broadcastHostMeta();
   }
 
-  startGame(gameId = this.selectedGameId) {
+  setPaused(paused) {
+    this.paused = Boolean(paused);
+    if (!this.paused) {
+      this.lastTickAt = performance.now();
+    }
+  }
+
+  startGame(gameId = this.selectedGameId, { startPaused = false } = {}) {
     if (!this.active) return;
     const def = getGameDefinition(gameId);
     if (!def || def.status !== 'playable') return;
 
     this.selectedGameId = def.id;
+    this.paused = Boolean(startPaused);
     this.stopGameLoop();
 
     const roster = this.getCombinedRoster();
@@ -169,9 +178,14 @@ export class HostController {
     this.sendRelay({ type: 'relay_broadcast', payload: startPayload });
     this._broadcastHostMeta();
 
+    // Send the initial frame right away so the board & players preview while placing.
+    const initialState = this.activeEngine.getState();
+    this.onLocalState(initialState);
+    this.sendRelay({ type: 'relay_broadcast', payload: { type: 'game_state', state: initialState } });
+
     this.lastTickAt = performance.now();
     this.tickTimer = setInterval(() => {
-      if (!this.active || !this.activeEngine) return;
+      if (!this.active || !this.activeEngine || this.paused) return;
       const now = performance.now();
       const dt = Math.min(0.05, (now - this.lastTickAt) / 1000);
       this.lastTickAt = now;

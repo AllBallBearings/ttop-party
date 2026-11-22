@@ -76,9 +76,10 @@ export function createBarrierChunks() {
   for (const obs of OBSTACLES) {
     const cos = Math.cos(obs.rotY);
     const sin = Math.sin(obs.rotY);
+    // Matches Three.js right-handed Y-axis rotation: x' = x*cos + z*sin, z' = -x*sin + z*cos
     const toWorld = (lx, lz) => ({
-      x: obs.x + lx * cos - lz * sin,
-      z: obs.z + lx * sin + lz * cos,
+      x: obs.x + lx * cos + lz * sin,
+      z: obs.z - lx * sin + lz * cos,
     });
 
     if (obs.type === 'wall') {
@@ -142,8 +143,8 @@ export function createBarrierChunks() {
 }
 
 function collideObstacleXZ(x, z, radius, obs) {
-  const cos = Math.cos(-obs.rotY);
-  const sin = Math.sin(-obs.rotY);
+  const cos = Math.cos(obs.rotY);
+  const sin = Math.sin(obs.rotY);
   const dx = x - obs.x;
   const dz = z - obs.z;
 
@@ -176,17 +177,15 @@ function collideObstacleXZ(x, z, radius, obs) {
     }
   }
 
-  const wCos = Math.cos(obs.rotY);
-  const wSin = Math.sin(obs.rotY);
   return {
-    dx: pushLX * wCos - pushLZ * wSin,
-    dz: pushLX * wSin + pushLZ * wCos,
+    dx: pushLX * cos + pushLZ * sin,
+    dz: -pushLX * sin + pushLZ * cos,
   };
 }
 
 function pointInObstacleXZ(x, z, margin, obs) {
-  const cos = Math.cos(-obs.rotY);
-  const sin = Math.sin(-obs.rotY);
+  const cos = Math.cos(obs.rotY);
+  const sin = Math.sin(obs.rotY);
   const dx = x - obs.x;
   const dz = z - obs.z;
   const lx = dx * cos - dz * sin;
