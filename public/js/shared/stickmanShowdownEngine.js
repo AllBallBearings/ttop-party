@@ -1,8 +1,9 @@
 /**
  * Stickman Showdown - Authoritative Game Engine (runs in Host's browser)
  *
- * Players drop onto a glowing flat tabletop arena, a gun drops near each player,
- * and they battle with camera-relative movement, jumping, and shooting until one remains.
+ * Rubbery Stick-Fight-style arena brawler: players drop onto the tabletop,
+ * grab weapons with real recoil physics, chip away and blast holes through
+ * destructible cover barriers, and send rivals flying until one remains.
  */
 
 export const ARENA_WIDTH = 12;
@@ -24,10 +25,15 @@ const TURN_SPEED = 3.4;
 const FACE_TURN_SPEED = 14.0;
 const JUMP_VELOCITY = 6.9;
 const GRAVITY = 19.5;
-const BULLET_SPEED = 14.0;
+const BULLET_SPEED = 14.5;
 const SHOOT_COOLDOWN = 0.28;
 const RAPID_COOLDOWN = 0.14;
 const BULLET_DAMAGE = 25;
+
+// Impactful Stick-Fight-style weapon recoil & bullet knockback impulses
+const PISTOL_RECOIL = 3.4;
+const RAPID_RECOIL = 2.6;
+const HIT_KNOCKBACK = 6.2;
 
 export const OBSTACLES = [
   { id: 'wall-nw', type: 'wall', x: -2.5, z: -1.1, halfW: 0.95, halfD: 0.24, height: 0.92, rotY: 0.22 },
@@ -59,6 +65,80 @@ function normalizeAngle(a) {
   while (a > Math.PI) a -= Math.PI * 2;
   while (a < -Math.PI) a += Math.PI * 2;
   return a;
+}
+
+/**
+ * Subdivide each arena barrier into individually chippable & destructible chunks.
+ * Walls split into 4x2 masonry blocks; rocks split into 3 clustered boulders.
+ */
+export function createBarrierChunks() {
+  const chunks = [];
+  for (const obs of OBSTACLES) {
+    const cos = Math.cos(obs.rotY);
+    const sin = Math.sin(obs.rotY);
+    const toWorld = (lx, lz) => ({
+      x: obs.x + lx * cos - lz * sin,
+      z: obs.z + lx * sin + lz * cos,
+    });
+
+    if (obs.type === 'wall') {
+      const cols = 4;
+      const colHalfW = obs.halfW / cols;
+      const botH = Number((obs.height * 0.52).toFixed(3));
+      const topH = Number((obs.height - botH).toFixed(3));
+      const rows = [
+        { row: 0, y: 0, height: botH },
+        { row: 1, y: botH, height: topH },
+      ];
+      for (const r of rows) {
+        for (let c = 0; c < cols; c++) {
+          const lx = -obs.halfW + colHalfW * (2 * c + 1);
+          const pos = toWorld(lx, 0);
+          chunks.push({
+            id: `${obs.id}-r${r.row}-c${c}`,
+            parentId: obs.id,
+            type: 'wall',
+            isCap: r.row === 1,
+            x: Number(pos.x.toFixed(3)),
+            y: r.y,
+            z: Number(pos.z.toFixed(3)),
+            halfW: Number(colHalfW.toFixed(3)),
+            halfD: obs.halfD,
+            height: r.height,
+            rotY: obs.rotY,
+            hp: 50,
+            maxHp: 50,
+          });
+        }
+      }
+    } else {
+      // Cluster of 3 chippable rock segments
+      const parts = [
+        { tag: 'l', lx: -obs.halfW * 0.42, lz: 0.05, hw: obs.halfW * 0.56, hd: obs.halfD * 0.68, h: obs.height * 0.92 },
+        { tag: 'r', lx: obs.halfW * 0.42, lz: -0.05, hw: obs.halfW * 0.56, hd: obs.halfD * 0.68, h: obs.height * 0.88 },
+        { tag: 't', lx: 0, lz: 0, hw: obs.halfW * 0.52, hd: obs.halfD * 0.52, h: obs.height },
+      ];
+      for (const pt of parts) {
+        const pos = toWorld(pt.lx, pt.lz);
+        chunks.push({
+          id: `${obs.id}-${pt.tag}`,
+          parentId: obs.id,
+          type: 'rock',
+          isCap: pt.tag === 't',
+          x: Number(pos.x.toFixed(3)),
+          y: 0,
+          z: Number(pos.z.toFixed(3)),
+          halfW: Number(pt.hw.toFixed(3)),
+          halfD: Number(pt.hd.toFixed(3)),
+          height: Number(pt.h.toFixed(3)),
+          rotY: obs.rotY,
+          hp: 75,
+          maxHp: 75,
+        });
+      }
+    }
+  }
+  return chunks;
 }
 
 function collideObstacleXZ(x, z, radius, obs) {
@@ -115,9 +195,10 @@ function pointInObstacleXZ(x, z, margin, obs) {
 }
 
 export class StickmanShowdownEngine {
-  constructor(players, callbacks = {}) {
+  constructor(players, callbacks = {}, rng = Math.random) {
     this.id = 'stickman-showdown';
     this.callbacks = callbacks;
+    this.rng = rng;
     this.roundTime = 0;
     this.phase = 'dropping';
     this.dropDuration = 1.25;
@@ -129,6 +210,7 @@ export class StickmanShowdownEngine {
     this.players = new Map();
     this.guns = [];
     this.bullets = [];
+    this.chunks = [];
     this.events = [];
 
     this._initRound(players);
@@ -138,6 +220,7 @@ export class StickmanShowdownEngine {
     this.players.clear();
     this.guns = [];
     this.bullets = [];
+    this.chunks = createBarrierChunks();
     this.events = [];
     this.roundTime = 0;
     this.phase = 'dropping';
@@ -162,6 +245,9 @@ export class StickmanShowdownEngine {
         vx: 0,
         vy: -2.0,
         vz: 0,
+        knockVx: 0,
+        knockVz: 0,
+        recoilKick: 0,
         yaw: sp.yaw,
         hp: 100,
         maxHp: 100,
@@ -190,7 +276,7 @@ export class StickmanShowdownEngine {
         y: 5.8,
         z: gunZ,
         vy: -1.5,
-        rotY: Math.random() * Math.PI * 2,
+        rotY: this.rng() * Math.PI * 2,
         grounded: false,
       });
     });
@@ -212,6 +298,9 @@ export class StickmanShowdownEngine {
       vx: 0,
       vy: -2.0,
       vz: 0,
+      knockVx: 0,
+      knockVz: 0,
+      recoilKick: 0,
       yaw: sp.yaw,
       hp: 100,
       maxHp: 100,
@@ -269,8 +358,8 @@ export class StickmanShowdownEngine {
   _updateBotInput(bot, dt) {
     bot.botState.decisionTimer -= dt;
     if (bot.botState.decisionTimer <= 0) {
-      bot.botState.decisionTimer = 0.6 + Math.random() * 0.9;
-      if (Math.random() < 0.35) bot.botState.strafeDir *= -1;
+      bot.botState.decisionTimer = 0.6 + this.rng() * 0.9;
+      if (this.rng() < 0.35) bot.botState.strafeDir *= -1;
     }
 
     let targetX = 0;
@@ -315,7 +404,7 @@ export class StickmanShowdownEngine {
     }
 
     if (!hasTarget) {
-      bot.input = { throttle: 0, turn: 0.4, shoot: false, jump: false };
+      bot.input = { throttle: 0, turn: 0.4, moveX: 0, moveZ: 0, shoot: false, jump: false };
       return;
     }
 
@@ -335,11 +424,11 @@ export class StickmanShowdownEngine {
       throttle = 0.25 * bot.botState.strafeDir;
     }
 
-    if (bot.grounded && Math.random() < 0.015) {
+    if (bot.grounded && this.rng() < 0.015) {
       wantJump = true;
     }
 
-    bot.input = { throttle, turn, shoot: wantShoot, jump: wantJump };
+    bot.input = { throttle, turn, moveX: 0, moveZ: 0, shoot: wantShoot, jump: wantJump };
   }
 
   tick(dt) {
@@ -369,8 +458,8 @@ export class StickmanShowdownEngine {
       this.bonusSpawnTimer -= dt;
       if (this.bonusSpawnTimer <= 0 && this.guns.length < 6) {
         this.bonusSpawnTimer = 11.0;
-        const bx = (Math.random() - 0.5) * 3.0;
-        const bz = (Math.random() - 0.5) * 1.6;
+        const bx = (this.rng() - 0.5) * 3.0;
+        const bz = (this.rng() - 0.5) * 1.6;
         this.guns.push({
           id: `gun-${this.nextEntityId++}`,
           type: 'rapid',
@@ -390,6 +479,7 @@ export class StickmanShowdownEngine {
 
       if (p.hitFlash > 0) p.hitFlash = Math.max(0, p.hitFlash - dt);
       if (p.shootCooldown > 0) p.shootCooldown = Math.max(0, p.shootCooldown - dt);
+      if (p.recoilKick > 0) p.recoilKick = Math.max(0, p.recoilKick - dt * 5.5);
 
       if (this.phase === 'dropping') {
         p.vy -= GRAVITY * 0.75 * dt;
@@ -408,6 +498,8 @@ export class StickmanShowdownEngine {
       if (this.phase === 'round_over') {
         p.vx = 0;
         p.vz = 0;
+        p.knockVx *= Math.exp(-dt * 8);
+        p.knockVz *= Math.exp(-dt * 8);
         continue;
       }
 
@@ -433,12 +525,25 @@ export class StickmanShowdownEngine {
         p.vx = Math.sin(p.yaw) * drive;
         p.vz = Math.cos(p.yaw) * drive;
       }
-      // Facing (used for shooting) and ground speed (run animation).
+
+      // Combine intentional movement with physics recoil / knockback velocity.
+      const totalVx = p.vx + p.knockVx;
+      const totalVz = p.vz + p.knockVz;
       const fwdX = Math.sin(p.yaw);
       const fwdZ = Math.cos(p.yaw);
       const moveSpeed = Math.hypot(p.vx, p.vz);
-      p.x = clamp(p.x + p.vx * dt, -HALF_W + PLAYER_RADIUS, HALF_W - PLAYER_RADIUS);
-      p.z = clamp(p.z + p.vz * dt, -HALF_D + PLAYER_RADIUS, HALF_D - PLAYER_RADIUS);
+
+      p.x = clamp(p.x + totalVx * dt, -HALF_W + PLAYER_RADIUS, HALF_W - PLAYER_RADIUS);
+      p.z = clamp(p.z + totalVz * dt, -HALF_D + PLAYER_RADIUS, HALF_D - PLAYER_RADIUS);
+
+      // Decay recoil/knockback slower in midair (so midair shooting launches you!)
+      const drag = Math.exp(-dt * (p.grounded ? 7.5 : 2.2));
+      p.knockVx *= drag;
+      p.knockVz *= drag;
+      if (Math.hypot(p.knockVx, p.knockVz) < 0.04) {
+        p.knockVx = 0;
+        p.knockVz = 0;
+      }
 
       if (p.input.jump && p.grounded) {
         p.vy = JUMP_VELOCITY;
@@ -446,29 +551,40 @@ export class StickmanShowdownEngine {
         this.events.push({ type: 'jump', playerId: p.id, x: p.x, z: p.z });
       }
 
+      // Floor height from intact barrier chunks underneath
       let floorHeight = 0;
-      for (const obs of OBSTACLES) {
-        if (pointInObstacleXZ(p.x, p.z, PLAYER_RADIUS * 0.6, obs)) {
-          if (p.y >= obs.height - 0.14) {
-            floorHeight = Math.max(floorHeight, obs.height);
+      for (const ch of this.chunks) {
+        if (ch.hp <= 0) continue;
+        if (pointInObstacleXZ(p.x, p.z, PLAYER_RADIUS * 0.6, ch)) {
+          const topY = ch.y + ch.height;
+          if (p.y >= topY - 0.14) {
+            floorHeight = Math.max(floorHeight, topY);
           }
         }
       }
 
+      const wasGrounded = p.grounded;
       p.vy -= GRAVITY * dt;
       p.y += p.vy * dt;
 
       if (p.y <= floorHeight) {
+        const impactVy = p.vy;
         p.y = floorHeight;
         p.vy = 0;
         p.grounded = true;
+        if (!wasGrounded && impactVy < -3.0) {
+          this.events.push({ type: 'land', playerId: p.id, x: p.x, z: p.z, color: p.color });
+        }
       } else {
         p.grounded = false;
       }
 
-      for (const obs of OBSTACLES) {
-        if (p.y < obs.height - 0.14) {
-          const push = collideObstacleXZ(p.x, p.z, PLAYER_RADIUS, obs);
+      // Collide horizontally with intact barrier chunks
+      for (const ch of this.chunks) {
+        if (ch.hp <= 0) continue;
+        const topY = ch.y + ch.height;
+        if (p.y < topY - 0.14 && p.y + PLAYER_HEIGHT > ch.y) {
+          const push = collideObstacleXZ(p.x, p.z, PLAYER_RADIUS, ch);
           if (push) {
             p.x += push.dx;
             p.z += push.dz;
@@ -519,30 +635,49 @@ export class StickmanShowdownEngine {
       }
 
       if (p.input.shoot && p.hasGun && p.shootCooldown <= 0) {
-        p.shootCooldown = p.weaponType === 'rapid' ? RAPID_COOLDOWN : SHOOT_COOLDOWN;
+        const isRapid = p.weaponType === 'rapid';
+        p.shootCooldown = isRapid ? RAPID_COOLDOWN : SHOOT_COOLDOWN;
+        // Slight chaotic spread on rapid fire for Stick-Fight feel
+        const spread = isRapid ? (this.rng() - 0.5) * 0.14 : (this.rng() - 0.5) * 0.03;
+        const shotYaw = p.yaw + spread;
+        const dirX = Math.sin(shotYaw);
+        const dirZ = Math.cos(shotYaw);
+
         const muzzleX = p.x + fwdX * 0.52;
         const muzzleY = p.y + BULLET_HEIGHT;
         const muzzleZ = p.z + fwdZ * 0.52;
+
+        // Apply real weapon recoil impulse to the shooter!
+        const recoil = isRapid ? RAPID_RECOIL : PISTOL_RECOIL;
+        p.knockVx = clamp(p.knockVx - dirX * recoil, -9.0, 9.0);
+        p.knockVz = clamp(p.knockVz - dirZ * recoil, -9.0, 9.0);
+        if (!p.grounded) {
+          p.vy = Math.min(p.vy + (isRapid ? 0.85 : 1.1), 5.5);
+        }
+        p.recoilKick = isRapid ? 0.9 : 1.0;
 
         this.bullets.push({
           id: `b-${this.nextEntityId++}`,
           ownerId: p.id,
           color: p.color,
+          weaponType: p.weaponType,
           x: muzzleX,
           y: muzzleY,
           z: muzzleZ,
-          vx: fwdX * BULLET_SPEED,
-          vz: fwdZ * BULLET_SPEED,
+          vx: dirX * BULLET_SPEED,
+          vz: dirZ * BULLET_SPEED,
           life: 1.35,
         });
 
         this.events.push({
           type: 'shoot',
           playerId: p.id,
+          weaponType: p.weaponType,
+          recoil,
           x: muzzleX,
           y: muzzleY,
           z: muzzleZ,
-          yaw: p.yaw,
+          yaw: shotYaw,
           color: p.color,
         });
       }
@@ -559,15 +694,37 @@ export class StickmanShowdownEngine {
         continue;
       }
 
-      let hitWall = false;
-      for (const obs of OBSTACLES) {
-        if (b.y <= obs.height && pointInObstacleXZ(b.x, b.z, BULLET_RADIUS, obs)) {
-          hitWall = true;
-          this.events.push({ type: 'wall_hit', x: b.x, y: b.y, z: b.z, color: b.color });
-          break;
+      // Check bullet impact against destructible barrier chunks (prefer closest vertical match)
+      let hitChunk = null;
+      let bestVertDist = Infinity;
+      for (const ch of this.chunks) {
+        if (ch.hp <= 0) continue;
+        const topY = ch.y + ch.height;
+        if (b.y + BULLET_RADIUS < ch.y || b.y - BULLET_RADIUS > topY) continue;
+        if (!pointInObstacleXZ(b.x, b.z, BULLET_RADIUS, ch)) continue;
+        const centerY = ch.y + ch.height * 0.5;
+        const vd = Math.abs(b.y - centerY);
+        if (vd < bestVertDist) {
+          bestVertDist = vd;
+          hitChunk = ch;
         }
       }
-      if (hitWall) {
+
+      if (hitChunk) {
+        hitChunk.hp = Math.max(0, hitChunk.hp - BULLET_DAMAGE);
+        this.events.push({
+          type: 'wall_hit',
+          chunkId: hitChunk.id,
+          chunkType: hitChunk.type,
+          destroyed: hitChunk.hp <= 0,
+          hpRatio: Number((hitChunk.hp / hitChunk.maxHp).toFixed(2)),
+          x: b.x,
+          y: b.y,
+          z: b.z,
+          vx: Number(b.vx.toFixed(2)),
+          vz: Number(b.vz.toFixed(2)),
+          color: b.color,
+        });
         this.bullets.splice(i, 1);
         continue;
       }
@@ -578,10 +735,15 @@ export class StickmanShowdownEngine {
         const distXZ = Math.hypot(b.x - p.x, b.z - p.z);
         if (distXZ <= PLAYER_RADIUS + BULLET_RADIUS && b.y >= p.y && b.y <= p.y + PLAYER_HEIGHT) {
           p.hp = Math.max(0, p.hp - BULLET_DAMAGE);
-          p.hitFlash = 0.22;
+          p.hitFlash = 0.24;
           const bLen = Math.hypot(b.vx, b.vz) || 1;
-          p.x = clamp(p.x + (b.vx / bLen) * 0.22, -HALF_W + PLAYER_RADIUS, HALF_W - PLAYER_RADIUS);
-          p.z = clamp(p.z + (b.vz / bLen) * 0.22, -HALF_D + PLAYER_RADIUS, HALF_D - PLAYER_RADIUS);
+          const nx = b.vx / bLen;
+          const nz = b.vz / bLen;
+          // Rubbery Stick-Fight knockback impulse!
+          p.knockVx = clamp(p.knockVx + nx * HIT_KNOCKBACK, -11, 11);
+          p.knockVz = clamp(p.knockVz + nz * HIT_KNOCKBACK, -11, 11);
+          p.vy = Math.max(p.vy, 2.3);
+          p.grounded = false;
 
           this.events.push({
             type: 'hit',
@@ -590,6 +752,8 @@ export class StickmanShowdownEngine {
             x: b.x,
             y: b.y,
             z: b.z,
+            vx: Number(b.vx.toFixed(2)),
+            vz: Number(b.vz.toFixed(2)),
             color: b.color,
           });
 
@@ -617,7 +781,9 @@ export class StickmanShowdownEngine {
               x: p.x,
               y: p.y + 0.5,
               z: p.z,
-              color: b.color,
+              vx: Number((nx * 7.5).toFixed(2)),
+              vz: Number((nz * 7.5).toFixed(2)),
+              color: p.color,
             });
           }
 
@@ -658,6 +824,20 @@ export class StickmanShowdownEngine {
       arenaWidth: ARENA_WIDTH,
       arenaDepth: ARENA_DEPTH,
       obstacles: OBSTACLES,
+      chunks: this.chunks.map((c) => ({
+        id: c.id,
+        parentId: c.parentId,
+        type: c.type,
+        isCap: c.isCap,
+        x: c.x,
+        y: c.y,
+        z: c.z,
+        halfW: c.halfW,
+        halfD: c.halfD,
+        height: c.height,
+        rotY: c.rotY,
+        maxHp: c.maxHp,
+      })),
     };
   }
 
@@ -672,12 +852,17 @@ export class StickmanShowdownEngine {
         x: Number(p.x.toFixed(3)),
         y: Number(p.y.toFixed(3)),
         z: Number(p.z.toFixed(3)),
+        vx: Number((p.vx + p.knockVx).toFixed(2)),
+        vy: Number(p.vy.toFixed(2)),
+        vz: Number((p.vz + p.knockVz).toFixed(2)),
         yaw: Number(p.yaw.toFixed(3)),
         hp: p.hp,
         maxHp: p.maxHp,
         alive: p.alive,
+        grounded: p.grounded,
         hasGun: p.hasGun,
         weaponType: p.weaponType,
+        recoilKick: Number(p.recoilKick.toFixed(2)),
         hitFlash: Number(p.hitFlash.toFixed(2)),
         animPhase: Number(p.animPhase.toFixed(2)),
         kills: p.kills,
@@ -691,6 +876,7 @@ export class StickmanShowdownEngine {
       winnerId: this.winnerId,
       winnerName: this.winnerName,
       players,
+      chunkHps: this.chunks.map((c) => c.hp),
       guns: this.guns.map((g) => ({
         id: g.id,
         type: g.type,

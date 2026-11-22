@@ -24,6 +24,7 @@ import {
 
 const TOKEN_KEY = 'tabletop_ar_player_token';
 const NAME_KEY = 'tabletop_ar_player_name';
+const BOT_DIFFICULTY_KEY = 'tabletop_ar_bot_difficulty';
 
 const els = {
   video: document.getElementById('cameraVideo'),
@@ -53,6 +54,8 @@ const els = {
   saveNameBtn: document.getElementById('saveNameBtn'),
   gameGrid: document.getElementById('gameGrid'),
   rosterList: document.getElementById('rosterList'),
+  difficultySection: document.getElementById('difficultySection'),
+  difficultyGroup: document.getElementById('difficultyGroup'),
   hostControls: document.getElementById('hostControls'),
   guestNotice: document.getElementById('guestNotice'),
   startGameBtn: document.getElementById('startGameBtn'),
@@ -82,6 +85,14 @@ const els = {
   promptMotionBtn: document.getElementById('promptMotionBtn'),
 };
 
+const savedBotDifficulty = (() => {
+  try {
+    return localStorage.getItem(BOT_DIFFICULTY_KEY) || 'medium';
+  } catch {
+    return 'medium';
+  }
+})();
+
 let ws = null;
 let soloMode = false;
 let selfPlayerId = null;
@@ -90,6 +101,7 @@ let hostId = null;
 let humanPlayers = [];
 let hostMeta = {
   selectedGameId: 'stickman-showdown',
+  botDifficulty: savedBotDifficulty,
   inGame: false,
   bots: [],
   wins: {},
@@ -164,6 +176,7 @@ function handleReturnedLobby() {
 
 const hostController = new HostController({
   sendRelay,
+  initialBotDifficulty: savedBotDifficulty,
   onLocalGameStarted: (msg) => handleGameStarted(msg),
   onLocalState: (state) => handleGameState(state),
   onLocalReturnedLobby: () => handleReturnedLobby(),
@@ -696,6 +709,15 @@ els.addBotBtn.addEventListener('click', () => {
 
 els.clearBotsBtn.addEventListener('click', () => {
   if (isSelfHost()) hostController.clearBots();
+});
+
+els.difficultyGroup.addEventListener('click', (e) => {
+  const btn = e.target.closest('.diff-btn');
+  if (!btn || !isSelfHost()) return;
+  const level = btn.dataset.difficulty;
+  if (!level) return;
+  try { localStorage.setItem(BOT_DIFFICULTY_KEY, level); } catch {}
+  hostController.setBotDifficulty(level);
 });
 
 els.nextRoundBtn.addEventListener('click', () => {
