@@ -1122,13 +1122,16 @@ export class PandaRamenClient {
     this.aimRing = null;
 
     this.controlLabels = {
-      jump: 'HOP',
+      jump: 'NEXT',
       shoot: 'FIRE',
-      jumpIcon: '🐾',
+      jumpIcon: '🐼',
       shootIcon: '🚀',
       badge: 'HOLD + RELEASE',
       armed: true,
     };
+
+    this._stickCaptionEl = document.querySelector('#touchOverlay .control-caption');
+    if (this._stickCaptionEl) this._stickCaptionEl.textContent = 'AIM';
 
     this._initMaterials();
     this._buildLights();
@@ -1161,6 +1164,10 @@ export class PandaRamenClient {
           this.ui.setSelectedWeapon(w.id);
           this.sendAction({ weapon: w.id });
         }
+      } else if (e.code === 'Tab') {
+        e.preventDefault();
+        sfx.wheelClick();
+        this.sendAction({ nextPanda: true });
       } else if (e.code === 'KeyQ' || e.code === 'KeyE' || e.code === 'KeyR') {
         sfx.wheelClick();
         this.sendAction({ arcCycle: true });
@@ -1847,9 +1854,11 @@ export class PandaRamenClient {
 
     // Update lower-right Weapon Wheel & Turn HUD
     this.ui.setSelectedWeapon(state.selectedWeapon);
-    const arc = ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1];
-    this.ui.arcTopEl.textContent = arc.label;
-    this.ui.arcDegEl.textContent = `${arc.deg}°`;
+    const deg = typeof state.aimDeg === 'number'
+      ? state.aimDeg
+      : (ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1]).deg;
+    this.ui.arcTopEl.textContent = deg <= 32 ? 'FLAT' : deg >= 55 ? 'LOB' : 'ANGLE';
+    this.ui.arcDegEl.textContent = `${deg}°`;
 
     this.ui.redScoreEl.textContent = `🍜 ${state.ramenLeft[0]}`;
     this.ui.blueScoreEl.textContent = `${state.ramenLeft[1]} 🍜`;
@@ -1875,13 +1884,14 @@ export class PandaRamenClient {
       this.ui.chargeFill.style.width = `${Math.round(state.chargePower * 100)}%`;
     }
 
-    // Touch action button labels
+    // Touch action button labels (secondary button swaps active panda!)
     const activeWeapon = WEAPON_BY_ID[state.selectedWeapon] || WEAPONS[0];
+    const canSwap = (state.ramenLeft?.[state.activeTeam] || 0) > 1;
     this.controlLabels = isMyTurn && state.phase === 'aim'
       ? {
-          jump: 'HOP',
+          jump: canSwap ? 'NEXT' : 'SOLO',
           shoot: state.isCharging ? 'RELEASE!' : 'FIRE',
-          jumpIcon: '🐾',
+          jumpIcon: '🐼',
           shootIcon: state.selectedWeapon === 'ramen-bomb' ? '🍜' : state.selectedWeapon === 'bouncing-tire' ? '🛞' : '🚀',
           badge: state.isCharging ? `${Math.round(state.chargePower * 100)}%` : activeWeapon.displayName.toUpperCase(),
           armed: true,
@@ -1898,9 +1908,10 @@ export class PandaRamenClient {
     // Process one-shot game events for juicy Fall-Guys visuals & sounds
     for (const ev of state.events || []) {
       switch (ev.type) {
-        case 'hop':
+        case 'panda_switch':
           sfx.hop();
-          this._spawnCartoonBurst(ev.x, ev.y + 0.1, ev.z, [0xd9e8b2, 0xf3ede0], 6, 1.8, 0.08);
+          this._spawnCartoonBurst(ev.x, ev.y + 0.35, ev.z, [0xf7e231, 0xf3ede0], 7, 1.8, 0.08);
+          this._spawnPopup(ev.pandaName, TEAMS[ev.team].color, ev.x, ev.y + 1.15, ev.z);
           break;
         case 'fire':
           sfx.fire(ev.weapon);
@@ -2065,22 +2076,23 @@ export class PandaRamenClient {
     }
 
     if (isActive) {
-      // Clumsy, nonchalant panda holding & aiming the whimsical weapon!
-      const arc = ARC_ANGLES[this.lastState?.arcIndex ?? 1] || ARC_ANGLES[1];
-      const recoil = pd.recoilTimer > 0 ? Math.sin((pd.recoilTimer / 0.42) * Math.PI) * 0.42 : 0;
-      const waddle = pd.speed > 0.15 ? Math.sin(ph * 1.4) : 0;
+      // Clumsy, nonchalant stationary panda holding & aiming the whimsical weapon!
+      const pitchRad = typeof this.lastState?.aimPitch === 'number'
+        ? this.lastState.aimPitch
+        : (ARC_ANGLES[this.lastState?.arcIndex ?? 1] || ARC_ANGLES[1]).rad;
+      const recoil = pd.recoilTimer > 0 ? Math.sin((pd.recoilTimer / 0.44) * Math.PI) * 0.44 : 0;
 
-      vis.torso.position.y = 0.46 + Math.abs(waddle) * 0.05;
-      vis.torso.rotation.set(-0.08 - recoil, 0, waddle * 0.14);
+      vis.torso.position.y = 0.45;
+      vis.torso.rotation.set(-0.08 - recoil, 0, Math.sin(time * 1.8) * 0.03);
       // Slight goofy head tilt so the panda looks chill & clumsy, never angry!
       vis.headGroup.rotation.set(0.06, -0.08, 0.14 + Math.sin(time * 2.2) * 0.05);
 
-      // Pitch weapon smoothly with chosen arc angle
-      vis.weaponMount.rotation.set(-arc.rad * 0.72 - recoil * 0.55, 0, 0);
-      vis.armR.rotation.set(-1.15 - arc.rad * 0.45, 0, -0.18);
-      vis.armL.rotation.set(-1.05 - arc.rad * 0.35, 0, 0.42);
-      vis.legL.rotation.set(-0.65 + waddle * 0.55, 0, 0.08);
-      vis.legR.rotation.set(-0.65 - waddle * 0.55, 0, -0.08);
+      // Pitch weapon smoothly with continuous launch angle!
+      vis.weaponMount.rotation.set(-pitchRad * 0.78 - recoil * 0.55, 0, 0);
+      vis.armR.rotation.set(-1.12 - pitchRad * 0.48, 0, -0.18);
+      vis.armL.rotation.set(-1.02 - pitchRad * 0.38, 0, 0.42);
+      vis.legL.rotation.set(-0.62, 0, 0.08);
+      vis.legR.rotation.set(-0.62, 0, -0.08);
       return;
     }
 
@@ -2143,13 +2155,15 @@ export class PandaRamenClient {
     }
 
     const weapon = WEAPON_BY_ID[s.selectedWeapon] || WEAPONS[0];
-    const arc = ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1];
+    const pitchRad = typeof s.aimPitch === 'number'
+      ? s.aimPitch
+      : (ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1]).rad;
     const power = s.isCharging ? s.chargePower : 0.62;
     const speed = weapon.speed * (0.42 + 0.72 * power);
     const sinY = Math.sin(pd.yaw);
     const cosY = Math.cos(pd.yaw);
-    const cosP = Math.cos(arc.rad);
-    const sinP = Math.sin(arc.rad);
+    const cosP = Math.cos(pitchRad);
+    const sinP = Math.sin(pitchRad);
 
     let x = pd.x + sinY * 0.62;
     let y = pd.y + 0.78;
@@ -2316,6 +2330,7 @@ export class PandaRamenClient {
 
   dispose() {
     window.removeEventListener('keydown', this._onKeyDown);
+    if (this._stickCaptionEl) this._stickCaptionEl.textContent = 'MOVE';
     if (this.ui) this.ui.dispose();
     this.boardRoot.remove(this.group);
   }

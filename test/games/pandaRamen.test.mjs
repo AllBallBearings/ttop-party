@@ -144,3 +144,39 @@ test('hot-joining and disconnecting players preserves both teams', () => {
   e.removePlayer('g1');
   assert.ok(e.getState().players.some((p) => p.team === 1), 'fallback AI restores Blue Team');
 });
+
+test('left stick aims yaw and launch angle without moving panda, and NEXT PANDA cycles team pandas without hopping', () => {
+  const e = new PandaRamenEngine([{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }], {}, seeded(33));
+  const before = e.getState();
+  const activeBefore = before.pandas.find((p) => p.id === before.activePandaId);
+
+  // Push stick right (+1) and up (+1) for 0.5s: yaw rotates, pitch rises, position stays stationary!
+  e.handleInput('p1', { stickX: 1, stickY: 1, moveX: 1, moveZ: -1 });
+  for (let i = 0; i < 15; i++) e.tick(1 / 30);
+
+  const afterAim = e.getState();
+  const activeAfter = afterAim.pandas.find((p) => p.id === before.activePandaId);
+  assert.equal(activeAfter.x, activeBefore.x, 'panda X does not move when aiming');
+  assert.equal(activeAfter.z, activeBefore.z, 'panda Z does not move when aiming');
+  assert.equal(activeAfter.y, activeBefore.y, 'panda Y does not change when aiming');
+  assert.notEqual(activeAfter.yaw, activeBefore.yaw, 'stick left/right rotates aim yaw');
+  assert.ok(afterAim.aimPitch > before.aimPitch, 'stick up raises launch angle');
+
+  // Press secondary button (jump -> NEXT PANDA) cycles cleanly through all 4 Red Team pandas without hopping
+  e.handleInput('p1', { stickX: 0, stickY: 0, jump: false });
+  e.tick(1 / 30);
+
+  const visited = [afterAim.activePandaId];
+  for (let step = 0; step < 3; step++) {
+    e.handleInput('p1', { jump: true });
+    e.tick(1 / 30);
+    const cur = e.getState();
+    assert.ok(e.events.some((ev) => ev.type === 'panda_switch'), 'emits panda_switch event');
+    assert.ok(!e.events.some((ev) => ev.type === 'hop'), 'never emits hop event');
+    visited.push(cur.activePandaId);
+    e.handleInput('p1', { jump: false });
+    e.tick(1 / 30);
+  }
+  assert.equal(new Set(visited).size, 4, 'cycled through all 4 living pandas on the active team');
+});
+

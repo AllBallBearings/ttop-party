@@ -316,6 +316,8 @@ function sendInput(immediate = false) {
   const cleanInput = {
     moveX: Number(move.moveX.toFixed(3)),
     moveZ: Number(move.moveZ.toFixed(3)),
+    stickX: Number(pendingInput.x.toFixed(3)),
+    stickY: Number(pendingInput.y.toFixed(3)),
     jump: pendingInput.jump,
     shoot: pendingInput.shoot,
   };

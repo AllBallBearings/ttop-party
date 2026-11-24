@@ -27,10 +27,15 @@ export function normalizeBotDifficulty(level) {
 }
 
 export const TURN_DURATION = 28;
-export const MOVE_STAMINA_MAX = 3.2; // seconds of waddling per turn
 export const GRAVITY = 13.5;
 export const PANDA_RADIUS = 0.48;
 export const MAX_RAMEN_HP = 100;
+
+export const MIN_AIM_PITCH = (15 * Math.PI) / 180;
+export const MAX_AIM_PITCH = (74 * Math.PI) / 180;
+export const DEFAULT_AIM_PITCH = (44 * Math.PI) / 180;
+export const AIM_YAW_RATE = 1.95; // rad/s left-right aiming
+export const AIM_PITCH_RATE = 1.15; // rad/s up-down launch angle
 
 export const ARC_ANGLES = [
   { id: 'low', label: 'FLAT', deg: 26, rad: (26 * Math.PI) / 180 },
@@ -441,6 +446,8 @@ function blankInput() {
   return {
     moveX: 0,
     moveZ: 0,
+    stickX: null,
+    stickY: null,
     jump: false,
     shoot: false,
     weapon: null,
@@ -506,11 +513,11 @@ export class PandaRamenEngine {
     this.activePandaId = null;
     this.activeControllerId = null;
     this.selectedWeaponId = 'rocket-launcher';
-    this.arcIndex = 1; // Classic 44 deg arc
+    this.arcIndex = 1; // Classic 44 deg preset index
+    this.aimPitch = DEFAULT_AIM_PITCH;
     this.chargePower = 0;
     this.chargeDir = 1;
     this.isCharging = false;
-    this.moveStamina = MOVE_STAMINA_MAX;
     this.shotFiredThisTurn = false;
 
     // Active projectiles & delayed bursts
@@ -677,6 +684,8 @@ export class PandaRamenEngine {
     const next = {
       moveX: typeof input.moveX === 'number' ? clamp(input.moveX, -1, 1) : prev.moveX,
       moveZ: typeof input.moveZ === 'number' ? clamp(input.moveZ, -1, 1) : prev.moveZ,
+      stickX: typeof input.stickX === 'number' ? clamp(input.stickX, -1, 1) : prev.stickX,
+      stickY: typeof input.stickY === 'number' ? clamp(input.stickY, -1, 1) : prev.stickY,
       jump: typeof input.jump === 'boolean' ? input.jump : prev.jump,
       shoot: typeof input.shoot === 'boolean' ? input.shoot : prev.shoot,
       weapon: prev.weapon,
@@ -684,7 +693,7 @@ export class PandaRamenEngine {
       arcCycle: prev.arcCycle,
     };
 
-    // One-shot weapon selection or arc change from the lower-right wheel / HUD
+    // One-shot weapon selection, panda swap, or quick pitch preset from the HUD / wheel
     if (typeof input.weapon === 'string' && WEAPON_BY_ID[input.weapon]) {
       next.weapon = input.weapon;
       if (playerId === this.activeControllerId && this.phase === 'aim' && !this.isCharging) {
@@ -694,15 +703,22 @@ export class PandaRamenEngine {
         }
       }
     }
+    if (input.nextPanda) {
+      if (playerId === this.activeControllerId && this.phase === 'aim' && !this.isCharging) {
+        this._switchActivePanda();
+      }
+    }
     if (typeof input.arcIndex === 'number' && input.arcIndex >= 0 && input.arcIndex < ARC_ANGLES.length) {
       if (playerId === this.activeControllerId && this.phase === 'aim') {
         this.arcIndex = Math.floor(input.arcIndex);
+        this.aimPitch = ARC_ANGLES[this.arcIndex].rad;
       }
     }
     if (input.arcCycle) {
       if (playerId === this.activeControllerId && this.phase === 'aim') {
         this.arcIndex = (this.arcIndex + 1) % ARC_ANGLES.length;
-        this.events.push({ type: 'arc_change', arcIndex: this.arcIndex });
+        this.aimPitch = ARC_ANGLES[this.arcIndex].rad;
+        this.events.push({ type: 'arc_change', arcIndex: this.arcIndex, aimPitch: this.aimPitch });
       }
     }
 
@@ -749,7 +765,6 @@ export class PandaRamenEngine {
     this.phase = 'aim';
     this.phaseTimer = 0;
     this.turnTimeLeft = TURN_DURATION;
-    this.moveStamina = MOVE_STAMINA_MAX;
     this.isCharging = false;
     this.chargePower = 0;
     this.chargeDir = 1;
@@ -795,6 +810,7 @@ export class PandaRamenEngine {
     if (isFirstTurn) {
       this.selectedWeaponId = 'rocket-launcher';
       this.arcIndex = 1;
+      this.aimPitch = DEFAULT_AIM_PITCH;
       // Gently aim the clumsy Turn-1 panda toward an opposing panda across the board
       const opp = this._livingPandas(1)[2] || this._livingPandas(1)[0];
       if (opp) {
@@ -804,20 +820,9 @@ export class PandaRamenEngine {
       this.windZ = -0.18;
     } else {
       this._rollWind();
-      // Gently orient toward nearest enemy panda so player starts facing the action
-      const enemies = this._livingPandas(1 - team);
-      if (enemies.length > 0) {
-        let nearest = enemies[0];
-        let bestD = Infinity;
-        for (const e of enemies) {
-          const d = Math.hypot(e.x - chosen.x, e.z - chosen.z);
-          if (d < bestD) {
-            bestD = d;
-            nearest = e;
-          }
-        }
-        chosen.yaw = Math.atan2(nearest.x - chosen.x, nearest.z - chosen.z);
-      }
+      this.arcIndex = 1;
+      this.aimPitch = DEFAULT_AIM_PITCH;
+      this._faceNearestEnemy(chosen);
     }
 
     // Clear stale edge states for active controller
@@ -838,6 +843,58 @@ export class PandaRamenEngine {
       controllerName: controller ? controller.name : TEAMS[team].name,
       weapon: this.selectedWeaponId,
     });
+  }
+
+  _faceNearestEnemy(panda) {
+    const enemies = this._livingPandas(1 - panda.team);
+    if (enemies.length === 0) return;
+    let nearest = enemies[0];
+    let bestD = Infinity;
+    for (const e of enemies) {
+      const d = Math.hypot(e.x - panda.x, e.z - panda.z);
+      if (d < bestD) {
+        bestD = d;
+        nearest = e;
+      }
+    }
+    panda.yaw = Math.atan2(nearest.x - panda.x, nearest.z - panda.z);
+  }
+
+  /** Cycle to the next living panda on the active team before firing. */
+  _switchActivePanda() {
+    const living = this._livingPandas(this.activeTeam);
+    if (living.length <= 1) return false;
+    const curIdx = living.findIndex((p) => p.id === this.activePandaId);
+    const prev = curIdx >= 0 ? living[curIdx] : null;
+    const next = living[(curIdx + 1) % living.length];
+    if (!next || next === prev) return false;
+
+    if (prev && prev.state === 'active') {
+      prev.state = 'idle';
+      prev.expression = 'happy';
+    }
+    next.state = 'active';
+    next.expression = 'goofy';
+    this.activePandaId = next.id;
+    this._faceNearestEnemy(next);
+
+    // Keep round-robin cursor advancing from whichever panda actually shoots
+    const teamPandas = this.pandas.filter((p) => p.team === this.activeTeam);
+    const slotIdx = teamPandas.findIndex((p) => p.id === next.id);
+    if (slotIdx >= 0) {
+      this.teamTurnCursor[this.activeTeam] = (slotIdx + 1) % teamPandas.length;
+    }
+
+    this.events.push({
+      type: 'panda_switch',
+      team: this.activeTeam,
+      pandaId: next.id,
+      pandaName: next.name,
+      x: next.x,
+      y: next.y,
+      z: next.z,
+    });
+    return true;
   }
 
   _finishMatch(winningTeam) {
@@ -868,16 +925,16 @@ export class PandaRamenEngine {
   }
 
   /** Computes the launch origin and velocity vector for a shot. */
-  getLaunchParams(panda, weaponId = this.selectedWeaponId, power = 0.65, arcIdx = this.arcIndex) {
+  getLaunchParams(panda, weaponId = this.selectedWeaponId, power = 0.65, pitchRad = this.aimPitch) {
     const weapon = WEAPON_BY_ID[weaponId] || WEAPONS[0];
-    const arc = ARC_ANGLES[clamp(arcIdx, 0, ARC_ANGLES.length - 1)];
+    const pitch = clamp(typeof pitchRad === 'number' ? pitchRad : DEFAULT_AIM_PITCH, MIN_AIM_PITCH, MAX_AIM_PITCH);
     const p = clamp(power, 0.25, 1.0);
     const speed = weapon.speed * (0.42 + 0.72 * p);
 
     const sinY = Math.sin(panda.yaw);
     const cosY = Math.cos(panda.yaw);
-    const cosP = Math.cos(arc.rad);
-    const sinP = Math.sin(arc.rad);
+    const cosP = Math.cos(pitch);
+    const sinP = Math.sin(pitch);
 
     const origin = {
       x: panda.x + sinY * 0.62,
@@ -895,20 +952,17 @@ export class PandaRamenEngine {
     };
   }
 
-  _fireWeapon(panda, weaponId, power, arcIdx) {
+  _fireWeapon(panda, weaponId, power, pitchRad = this.aimPitch) {
     const weapon = WEAPON_BY_ID[weaponId] || WEAPONS[0];
     this.shotFiredThisTurn = true;
     this.isCharging = false;
     this.phase = 'firing';
     this.phaseTimer = 0;
-    panda.recoilTimer = 0.42;
+    // Playful visual recoil wobble without sliding the stationary panda off its perch!
+    panda.recoilTimer = 0.44;
 
-    // Playful tiny clumsy recoil hop on the shooter (not enough to fall off ledge!)
     const sinY = Math.sin(panda.yaw);
     const cosY = Math.cos(panda.yaw);
-    panda.vx -= sinY * 0.85;
-    panda.vz -= cosY * 0.85;
-    panda.vy = Math.max(panda.vy, 1.4);
 
     if (weapon.burstCount > 1) {
       // Fan volley (e.g. 3 whistling bamboo rockets!)
@@ -920,12 +974,12 @@ export class PandaRamenEngine {
           team: panda.team,
           weaponId: weapon.id,
           power,
-          arcIdx,
+          pitchRad,
           yawOff,
         });
       });
     } else {
-      this._spawnProjectile(panda, weapon.id, power, arcIdx, 0);
+      this._spawnProjectile(panda, weapon.id, power, pitchRad, 0);
     }
 
     this.events.push({
@@ -941,10 +995,10 @@ export class PandaRamenEngine {
     });
   }
 
-  _spawnProjectile(panda, weaponId, power, arcIdx, yawOffset = 0, override = null) {
+  _spawnProjectile(panda, weaponId, power, pitchRad, yawOffset = 0, override = null) {
     const savedYaw = panda.yaw;
     panda.yaw = savedYaw + yawOffset;
-    const launch = this.getLaunchParams(panda, weaponId, power, arcIdx);
+    const launch = this.getLaunchParams(panda, weaponId, power, pitchRad);
     panda.yaw = savedYaw;
 
     const proj = {
@@ -1092,10 +1146,10 @@ export class PandaRamenEngine {
       weaponId = pool[Math.floor(this.rng() * pool.length)];
     }
 
-    const weapon = WEAPON_BY_ID[weaponId];
     const arcIdx = dy > 0.65 || weaponId === 'dumpling-drop' || weaponId === 'ramen-bomb'
       ? (this.rng() < 0.55 ? 2 : 1)
       : (weaponId === 'rocket-launcher' && dy < 0.3 ? 0 : 1);
+    const pitchRad = ARC_ANGLES[arcIdx].rad;
 
     // Search power in [0.25..1.0] via fast ballistic simulation so bots clear peaks cleanly!
     const baseYaw = Math.atan2(target.x - panda.x, target.z - panda.z);
@@ -1106,7 +1160,7 @@ export class PandaRamenEngine {
     const testYaws = [baseYaw - 0.08, baseYaw, baseYaw + 0.08];
     for (const ty of testYaws) {
       for (let p = 0.28; p <= 1.0; p += 0.06) {
-        const sim = this._simulateShotLanding(panda, weaponId, p, arcIdx, ty, profile.windComp);
+        const sim = this._simulateShotLanding(panda, weaponId, p, pitchRad, ty, profile.windComp);
         const err = Math.hypot(sim.x - target.x, (sim.y - target.y) * 0.8, sim.z - target.z);
         if (err < bestErr) {
           bestErr = err;
@@ -1123,6 +1177,7 @@ export class PandaRamenEngine {
     return {
       weaponId,
       arcIdx,
+      pitchRad,
       aimYaw,
       aimPower,
       thinkTimer: profile.thinkDelay,
@@ -1132,10 +1187,10 @@ export class PandaRamenEngine {
     };
   }
 
-  _simulateShotLanding(panda, weaponId, power, arcIdx, yaw, windComp = 1) {
+  _simulateShotLanding(panda, weaponId, power, pitchRad, yaw, windComp = 1) {
     const savedYaw = panda.yaw;
     panda.yaw = yaw;
-    const launch = this.getLaunchParams(panda, weaponId, power, arcIdx);
+    const launch = this.getLaunchParams(panda, weaponId, power, pitchRad);
     panda.yaw = savedYaw;
 
     let x = launch.origin.x;
@@ -1170,6 +1225,7 @@ export class PandaRamenEngine {
     }
 
     this.turnTimeLeft = Math.max(0, this.turnTimeLeft - dt);
+    panda.speed = 0;
 
     // Bot AI control
     if (controller?.isBot) {
@@ -1182,9 +1238,10 @@ export class PandaRamenEngine {
         }
       }
       if (this.botPlan) {
-        // Smoothly rotate panda toward bot's planned aim yaw
+        // Smoothly rotate panda & pitch launcher toward bot's planned shot
         const diff = normalizeAngle(this.botPlan.aimYaw - panda.yaw);
         panda.yaw = normalizeAngle(panda.yaw + diff * Math.min(1, dt * 6.5));
+        this.aimPitch += (this.botPlan.pitchRad - this.aimPitch) * Math.min(1, dt * 6.5);
 
         if (this.botPlan.stage === 'think') {
           this.botPlan.thinkTimer -= dt;
@@ -1199,62 +1256,34 @@ export class PandaRamenEngine {
           this.chargePower = 0.25 + (this.botPlan.aimPower - 0.25) * t;
           if (t >= 1) {
             this.botPlan.stage = 'done';
-            this._fireWeapon(panda, this.selectedWeaponId, this.botPlan.aimPower, this.arcIndex);
+            this._fireWeapon(panda, this.selectedWeaponId, this.botPlan.aimPower, this.botPlan.pitchRad);
           }
         }
       }
       return;
     }
 
-    // Human player control
+    // Human player control — stationary aiming!
+    // Left stick: left/right rotates aim yaw, up/down tilts launch angle (no movement).
     const inp = this.inputs.get(this.activeControllerId) || blankInput();
     const wasShoot = Boolean(this.prevShoot.get(this.activeControllerId));
     const wasJump = Boolean(this.prevJump.get(this.activeControllerId));
     this.prevShoot.set(this.activeControllerId, Boolean(inp.shoot));
     this.prevJump.set(this.activeControllerId, Boolean(inp.jump));
 
-    const stickMag = Math.hypot(inp.moveX, inp.moveZ);
-    if (stickMag > 0.12) {
-      const desiredYaw = Math.atan2(inp.moveX, inp.moveZ);
-      const diff = normalizeAngle(desiredYaw - panda.yaw);
-      panda.yaw = normalizeAngle(panda.yaw + diff * Math.min(1, dt * 10.5));
+    const sx = inp.stickX !== null ? inp.stickX : inp.moveX;
+    const sy = inp.stickY !== null ? inp.stickY : -inp.moveZ;
 
-      // Waddle when stick pushed past 0.35 and not charging a shot
-      if (!this.isCharging && stickMag > 0.35 && this.moveStamina > 0) {
-        const moveSpeed = 2.45 * clamp((stickMag - 0.25) / 0.75, 0.2, 1.0);
-        const nx = clamp(panda.x + Math.sin(panda.yaw) * moveSpeed * dt, -HALF_W + 0.55, HALF_W - 0.55);
-        const nz = clamp(panda.z + Math.cos(panda.yaw) * moveSpeed * dt, -HALF_D + 0.55, HALF_D - 0.55);
-        const curGround = getSurfaceHeight(panda.x, panda.z, panda.y + 0.25);
-        const nextGround = getSurfaceHeight(nx, nz, panda.y + 0.25);
-
-        // Soft cliff-guard & steep-wall guard while walking on foot (hop to climb or jump off!)
-        const onGround = panda.y <= curGround + 0.08;
-        const slopeOk = (nextGround - panda.y <= 0.42) && (!onGround || (panda.y - nextGround <= 0.55));
-        if (slopeOk) {
-          panda.x = nx;
-          panda.z = nz;
-          panda.speed = moveSpeed;
-          panda.animPhase += dt * moveSpeed * 3.8;
-          this.moveStamina = Math.max(0, this.moveStamina - dt);
-        } else {
-          panda.speed = 0;
-        }
-      } else {
-        panda.speed = 0;
-      }
-    } else {
-      panda.speed = 0;
+    if (Math.abs(sx) > 0.08) {
+      panda.yaw = normalizeAngle(panda.yaw - sx * AIM_YAW_RATE * dt);
+    }
+    if (Math.abs(sy) > 0.08) {
+      this.aimPitch = clamp(this.aimPitch + sy * AIM_PITCH_RATE * dt, MIN_AIM_PITCH, MAX_AIM_PITCH);
     }
 
-    // Playful Panda Hop (allows climbing ledges & wooden zoo decks!)
-    const ground = getSurfaceHeight(panda.x, panda.z, panda.y + 0.2);
-    if (inp.jump && !wasJump && !this.isCharging && panda.y <= ground + 0.1) {
-      panda.vy = 5.9;
-      if (stickMag > 0.25) {
-        panda.vx += Math.sin(panda.yaw) * 2.2;
-        panda.vz += Math.cos(panda.yaw) * 2.2;
-      }
-      this.events.push({ type: 'hop', pandaId: panda.id, x: panda.x, y: panda.y, z: panda.z });
+    // Secondary button (formerly HOP) cycles to the next panda on your team before shooting!
+    if (inp.jump && !wasJump && !this.isCharging) {
+      this._switchActivePanda();
     }
 
     // Hold FIRE to charge power, Release to launch!
@@ -1274,14 +1303,14 @@ export class PandaRamenEngine {
         }
       }
     } else if (wasShoot && this.isCharging) {
-      this._fireWeapon(panda, this.selectedWeaponId, this.chargePower, this.arcIndex);
+      this._fireWeapon(panda, this.selectedWeaponId, this.chargePower, this.aimPitch);
       return;
     }
 
     // Auto-fire if turn timer runs out
     if (this.turnTimeLeft <= 0) {
       const power = this.isCharging ? this.chargePower : 0.62;
-      this._fireWeapon(panda, this.selectedWeaponId, power, this.arcIndex);
+      this._fireWeapon(panda, this.selectedWeaponId, power, this.aimPitch);
     }
   }
 
@@ -1294,7 +1323,7 @@ export class PandaRamenEngine {
         this.pendingBursts.splice(i, 1);
         const pd = this.pandas.find((p) => p.id === b.pandaId);
         if (pd) {
-          this._spawnProjectile(pd, b.weaponId, b.power, b.arcIdx, b.yawOff);
+          this._spawnProjectile(pd, b.weaponId, b.power, b.pitchRad, b.yawOff);
         }
       }
     }
@@ -1327,7 +1356,7 @@ export class PandaRamenEngine {
         const owner = this.pandas.find((p) => p.id === pr.ownerPandaId) || this.pandas[0];
         for (let k = 0; k < weapon.clusterCount; k++) {
           const ang = (k / weapon.clusterCount) * Math.PI * 2 + 0.4;
-          this._spawnProjectile(owner, weapon.id, 0.5, this.arcIndex, 0, {
+          this._spawnProjectile(owner, weapon.id, 0.5, this.aimPitch, 0, {
             x: pr.x + Math.cos(ang) * 0.25,
             y: pr.y,
             z: pr.z + Math.sin(ang) * 0.25,
@@ -1627,9 +1656,10 @@ export class PandaRamenEngine {
       activeControllerIsBot: Boolean(activeCtrl?.isBot),
       selectedWeapon: this.selectedWeaponId,
       arcIndex: this.arcIndex,
+      aimPitch: Number(this.aimPitch.toFixed(4)),
+      aimDeg: Math.round((this.aimPitch * 180) / Math.PI),
       isCharging: this.isCharging,
       chargePower: Number(this.chargePower.toFixed(3)),
-      moveStamina: Number((this.moveStamina / MOVE_STAMINA_MAX).toFixed(3)),
       windX: this.windX,
       windZ: this.windZ,
       botDifficulty: this.botDifficulty,
