@@ -4,11 +4,15 @@ import {
   PandaRamenEngine,
   BOARD_WIDTH,
   BOARD_DEPTH,
+  WATER_LEVEL,
+  WATERFALL_CONFIG,
   WEAPONS,
   ZOO_STRUCTURES,
   BOT_DIFFICULTIES,
   getTerrainHeight,
   getSurfaceHeight,
+  getRiverCenterX,
+  isInRiver,
 } from '../../public/js/shared/pandaRamenEngine.js';
 
 function seeded(seed) {
@@ -26,12 +30,12 @@ const bots = (n) => Array.from({ length: n }, (_, i) => ({
   isBot: true,
 }));
 
-test('initializes coffee-table board with 2 teams of 4 pandas, ramen bowls, vertical terrain, and rocket launcher selected', () => {
+test('initializes expanded 2x board with towering peaks, waterfall & river, 2x4 pandas, ramen bowls, and rocket launcher selected', () => {
   const e = new PandaRamenEngine([{ id: 'h1', name: 'Player 1', color: '#d94e3b' }], {}, seeded(7));
   const s = e.getState();
 
   assert.equal(s.gameId, 'panda-ramen');
-  assert.ok(BOARD_WIDTH >= 15 && BOARD_DEPTH >= 10, 'board covers a coffee table');
+  assert.ok(BOARD_WIDTH >= 22 && BOARD_DEPTH >= 15, 'board is ~2x bigger to spread pandas out');
   assert.equal(s.pandas.length, 8, '8 pandas total');
   assert.equal(s.pandas.filter((p) => p.team === 0).length, 4, '4 pandas on Red Team');
   assert.equal(s.pandas.filter((p) => p.team === 1).length, 4, '4 pandas on Blue Team');
@@ -39,9 +43,16 @@ test('initializes coffee-table board with 2 teams of 4 pandas, ramen bowls, vert
   assert.equal(s.selectedWeapon, 'rocket-launcher', 'wheel starts on rocket launcher');
   assert.equal(WEAPONS.length, 6, '6 whimsical weapons on the wheel');
 
-  // Verticality: some pandas sit on peaks/outcrops significantly above valley floor
+  // Dramatic verticality: towering spires & >3.2u vertical spread between high and low pandas
   const ys = s.pandas.map((p) => p.y);
-  assert.ok(Math.max(...ys) - Math.min(...ys) > 1.5, 'pandas are spread across vertical peaks and valley');
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 3.2, 'pandas span high peaks, mid ledges, and low meadows');
+  assert.ok(getTerrainHeight(-8.95, -5.45) > 6.5, 'NW mountain spire towers high above the valley');
+
+  // Waterfall cliff headwall & carved sunken river channel flowing through the board
+  assert.ok(getTerrainHeight(WATERFALL_CONFIG.x, WATERFALL_CONFIG.lipZ) > 4.2, 'waterfall pours from a high cliff edge');
+  const midRiverX = getRiverCenterX(0.4);
+  assert.equal(isInRiver(midRiverX, 0.4), true, 'river flows through the middle of the board');
+  assert.ok(getTerrainHeight(midRiverX, 0.4) < WATER_LEVEL, 'riverbed is carved below water level');
 
   // Active panda is ON the board and inside bounds
   const active = s.pandas.find((p) => p.id === s.activePandaId);
@@ -49,11 +60,10 @@ test('initializes coffee-table board with 2 teams of 4 pandas, ramen bowls, vert
   assert.equal(active.state, 'active');
   assert.ok(Math.abs(active.x) < BOARD_WIDTH / 2 && Math.abs(active.z) < BOARD_DEPTH / 2);
 
-  // Zoo structures exist and provide elevated walkable surfaces
-  assert.ok(ZOO_STRUCTURES.length >= 4, 'zoo structures present');
+  // Zoo structures (including river bridge & climbing tower) exist and provide elevated walkable surfaces
+  assert.ok(ZOO_STRUCTURES.length >= 5, 'zoo structures and river bridge present');
   const deck = ZOO_STRUCTURES.find((z) => z.id === 'zoo-deck-upper');
   assert.ok(getSurfaceHeight(deck.x, deck.z, 5) >= deck.topY - 1e-6);
-  assert.ok(getTerrainHeight(-6.25, -3.55) > 3.5, 'NW peak rises high above valley');
 });
 
 test('weapon wheel switching, charging, and firing works for all 6 whimsical weapons', () => {
