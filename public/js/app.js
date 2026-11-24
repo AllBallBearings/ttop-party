@@ -190,7 +190,11 @@ function handleGameStarted(msg) {
     clientGame = null;
   }
   currentGameId = msg.gameId;
-  clientGame = createClientGame(msg.gameId, arTracker.boardRoot, msg.config, selfPlayerId);
+  clientGame = createClientGame(msg.gameId, arTracker.boardRoot, msg.config, selfPlayerId, {
+    sendAction: (extra) => sendGameAction(extra),
+  });
+  arTracker.setPreviewDist(clientGame?.preferredPreviewDist || 13.5);
+  els.touchOverlay.classList.toggle('panda-ramen-active', msg.gameId === 'panda-ramen');
   resetActionButtons();
   els.lobbyModal.classList.add('hidden');
   els.roundBanner.classList.add('hidden');
@@ -204,6 +208,8 @@ function handleReturnedLobby() {
     clientGame = null;
   }
   currentGameId = null;
+  arTracker.setPreviewDist(13.5);
+  els.touchOverlay.classList.remove('panda-ramen-active');
   els.roundBanner.classList.add('hidden');
   els.lobbyModal.classList.remove('hidden');
   syncPlayUi();
@@ -324,6 +330,17 @@ function sendInput(immediate = false) {
   }
 }
 
+function sendGameAction(extra) {
+  if (!clientGame || !extra) return;
+  if (isSelfHost()) {
+    hostController.handleGuestInput(selfPlayerId, extra);
+    return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'input', ...extra }));
+  }
+}
+
 function getCombinedPlayers() {
   const wins = hostMeta.wins || {};
   return [...humanPlayers, ...(hostMeta.bots || [])].map((p) => ({
@@ -360,7 +377,8 @@ function renderLobby() {
   els.closeLobbyBtn.classList.toggle('hidden', !hostMeta.inGame);
 
   const activeDiff = hostMeta.botDifficulty || 'medium';
-  els.difficultySection.classList.toggle('hidden', hostMeta.selectedGameId !== 'pixel-hoops');
+  const hasDifficulty = hostMeta.selectedGameId === 'pixel-hoops' || hostMeta.selectedGameId === 'panda-ramen';
+  els.difficultySection.classList.toggle('hidden', !hasDifficulty);
   for (const btn of els.difficultyGroup.querySelectorAll('.diff-btn')) {
     const level = btn.dataset.difficulty;
     btn.classList.toggle('active', level === activeDiff);
@@ -470,8 +488,8 @@ function handleGameState(state) {
     renderHudPlayers(clientGame.getHudPlayers(state));
     const labels = clientGame.controlLabels || {};
     const icons = { JUKE: '💨', BLOCK: '✋', SHOOT: '🏀', STEAL: '🫳' };
-    setActionButton(els.jumpBtn, icons[labels.jump] || '·', labels.jump || '');
-    setActionButton(els.shootBtn, icons[labels.shoot] || '·', labels.shoot || '');
+    setActionButton(els.jumpBtn, labels.jumpIcon || icons[labels.jump] || '·', labels.jump || '');
+    setActionButton(els.shootBtn, labels.shootIcon || icons[labels.shoot] || '·', labels.shoot || '');
     els.shootBtn.classList.toggle('armed', Boolean(labels.armed));
     els.shootBtn.classList.toggle('unarmed', !labels.armed);
     els.shootBadge.textContent = labels.badge || '';
@@ -648,9 +666,10 @@ function connectRelay() {
   });
 
   ws.addEventListener('close', () => {
+    if (soloMode) return;
     hostController.deactivate();
     renderLobby();
-    if (!soloMode && resolveRelayWebSocketUrl()) {
+    if (resolveRelayWebSocketUrl()) {
       setTimeout(connectRelay, 1500);
     }
   });

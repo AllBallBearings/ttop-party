@@ -18,6 +18,15 @@ export const GAME_CATALOG = [
     controlsHint: 'Offense: JUKE (crossover/spin) • hold SHOOT (pull away to fadeaway, drive close to dunk) • Defense: BLOCK • STEAL',
   },
   {
+    id: 'panda-ramen',
+    name: 'Panda Ramen Rumble',
+    tagline: 'Turn-based 4v4 panda artillery! Nab rival ramen bowls & send chubby pandas rolling home to nap.',
+    minPlayers: 1,
+    maxPlayers: 8,
+    status: 'playable',
+    controlsHint: 'Stick to aim & waddle • HOP onto zoo decks • Pick whimsical weapons on the lower-right wheel • Hold FIRE to charge!',
+  },
+  {
     id: 'sumo-bumper',
     name: 'Tabletop Sumo',
     tagline: 'Knock rival stickmen off the AR platform edge.',

@@ -117,13 +117,17 @@ export class ARTracker {
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024, 1024);
     dir.shadow.camera.near = 1;
-    dir.shadow.camera.far = 30;
-    dir.shadow.camera.left = -8;
-    dir.shadow.camera.right = 8;
-    dir.shadow.camera.top = 8;
-    dir.shadow.camera.bottom = -8;
+    dir.shadow.camera.far = 34;
+    dir.shadow.camera.left = -10.5;
+    dir.shadow.camera.right = 10.5;
+    dir.shadow.camera.top = 10.5;
+    dir.shadow.camera.bottom = -10.5;
     this.boardRoot.add(hemi, dir, dir.target);
     this.lights = { hemi, dir };
+  }
+
+  setPreviewDist(dist) {
+    this.previewDist = Math.max(9, Math.min(24, Number(dist) || 13.5));
   }
 
   _createPreviewTabletop() {
