@@ -826,3 +826,218 @@ html, body {
   color: #ffffff;
   font-size: 12px;
 }
+
+/* ------------------------------------------------------------------ */
+/* Panda Ramen Rumble — Turn Banner, Charge Gauge & Cartoon Wheel     */
+/* ------------------------------------------------------------------ */
+
+.panda-ui-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+}
+
+.panda-turn-banner {
+  position: fixed;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(247, 226, 49, 0.55);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
+  white-space: nowrap;
+}
+
+.panda-score-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 900;
+  color: #fff8dc;
+}
+
+.panda-team-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+}
+.panda-team-dot.red { background: #d94e3b; }
+.panda-team-dot.blue { background: #3b7fb8; }
+
+.panda-turn-center {
+  text-align: center;
+  padding: 0 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.panda-turn-title {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #fef08a;
+}
+
+.panda-turn-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.panda-sep {
+  margin: 0 5px;
+  opacity: 0.55;
+}
+
+.panda-charge-wrap {
+  position: fixed;
+  left: 50%;
+  bottom: max(26px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(240px, 46vw);
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #f7e231;
+  text-align: center;
+}
+
+.panda-charge-label {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fef08a;
+  margin-bottom: 4px;
+}
+
+.panda-charge-track {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.panda-charge-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #59c747, #f7e231, #f28c28, #ef4444);
+  transition: width 0.04s linear;
+}
+
+/* Lower-right Illustrated Cartoon Weapon Wheel (matching reference image!) */
+.panda-weapon-wheel {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  width: 214px;
+  height: 214px;
+  pointer-events: auto;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
+  user-select: none;
+  touch-action: none;
+}
+
+.panda-weapon-wheel .wheel-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.panda-weapon-wheel .wheel-slice {
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+  transform-origin: 112px 112px;
+}
+
+.panda-weapon-wheel .wheel-slice:hover {
+  filter: brightness(1.08);
+}
+
+.panda-weapon-wheel .wheel-slice.selected {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.92));
+}
+
+.panda-weapon-wheel .wheel-slice.selected .wheel-wedge {
+  stroke: #ffffff;
+  stroke-width: 4.2;
+}
+
+.panda-weapon-wheel .wheel-label {
+  font-family: "Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif;
+  font-size: 9.5px;
+  font-weight: 900;
+  fill: #ffffff;
+  stroke: #111114;
+  stroke-width: 2.8px;
+  paint-order: stroke;
+  pointer-events: none;
+  letter-spacing: -0.02em;
+}
+
+.panda-weapon-wheel .wheel-hub {
+  cursor: pointer;
+}
+
+.panda-weapon-wheel .wheel-hub-top {
+  font-size: 9px;
+  font-weight: 900;
+  fill: #94a3b8;
+  letter-spacing: 0.08em;
+}
+
+.panda-weapon-wheel .wheel-hub-deg {
+  font-size: 13px;
+  font-weight: 900;
+  fill: #fef08a;
+}
+
+/* Shift right touch action buttons cleanly to the left of the lower-right wheel */
+.touch-overlay.panda-ramen-active .right-controls {
+  right: max(240px, calc(env(safe-area-inset-right) + 236px));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  gap: 10px;
+}
+
+.touch-overlay.panda-ramen-active .jump-btn {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 6px;
+}
+
+.touch-overlay.panda-ramen-active .shoot-btn {
+  width: 92px;
+  height: 92px;
+}
+
+@media (max-width: 680px) {
+  .panda-weapon-wheel {
+    width: 164px;
+    height: 164px;
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .touch-overlay.panda-ramen-active .right-controls {
+    right: max(182px, calc(env(safe-area-inset-right) + 178px));
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .touch-overlay.panda-ramen-active .jump-btn {
+    width: 62px;
+    height: 62px;
+  }
+  .touch-overlay.panda-ramen-active .shoot-btn {
+    width: 78px;
+    height: 78px;
+  }
+}
+

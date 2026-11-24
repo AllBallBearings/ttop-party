@@ -1,5 +1,6 @@
 import { StickmanShowdownEngine } from './shared/stickmanShowdownEngine.js';
 import { PixelHoopsEngine, normalizeBotDifficulty } from './shared/pixelHoopsEngine.js';
+import { PandaRamenEngine } from './shared/pandaRamenEngine.js';
 import { getGameDefinition } from './shared/gameCatalog.js';
 
 const BOT_COLORS = [
@@ -164,9 +165,13 @@ export class HostController {
         this._broadcastHostMeta();
       },
     };
-    this.activeEngine = def.id === 'pixel-hoops'
-      ? new PixelHoopsEngine(this._hoopsLineup(roster), callbacks, Math.random, { botDifficulty: this.botDifficulty })
-      : new StickmanShowdownEngine(roster, callbacks);
+    if (def.id === 'pixel-hoops') {
+      this.activeEngine = new PixelHoopsEngine(this._hoopsLineup(roster), callbacks, Math.random, { botDifficulty: this.botDifficulty });
+    } else if (def.id === 'panda-ramen') {
+      this.activeEngine = new PandaRamenEngine(roster, callbacks, Math.random, { botDifficulty: this.botDifficulty });
+    } else {
+      this.activeEngine = new StickmanShowdownEngine(roster, callbacks);
+    }
 
     const startPayload = {
       type: 'game_started',
