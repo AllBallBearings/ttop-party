@@ -936,7 +936,7 @@ function weaponIconSvg(id) {
   }
 }
 
-function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
+function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
   const wrap = document.createElement('div');
   wrap.className = 'panda-ui-layer';
 
@@ -963,14 +963,79 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
   `;
   wrap.appendChild(topBanner);
 
-  // Charge meter bar (shown when charging FIRE)
-  const chargeWrap = document.createElement('div');
-  chargeWrap.className = 'panda-charge-wrap hidden';
-  chargeWrap.innerHTML = `
-    <div class="panda-charge-label">POWER</div>
-    <div class="panda-charge-track"><div id="pandaChargeFill" class="panda-charge-fill"></div></div>
+  // Lower-left Precision 4-Way D-Pad (Up/Down = Distance, Left/Right = Direction)
+  const dpadWrap = document.createElement('div');
+  dpadWrap.className = 'panda-dpad-wrap';
+  dpadWrap.setAttribute('aria-label', 'Aim and Distance D-Pad');
+  dpadWrap.innerHTML = `
+    <div class="panda-dpad">
+      <button type="button" class="dpad-btn dpad-up" data-dx="0" data-dy="1" aria-label="Farther">
+        <span class="dpad-arrow">▲</span>
+        <span class="dpad-tag">FAR</span>
+      </button>
+      <button type="button" class="dpad-btn dpad-left" data-dx="-1" data-dy="0" aria-label="Aim Left">
+        <span class="dpad-arrow">◀</span>
+      </button>
+      <div class="dpad-center" aria-hidden="true">
+        <span class="dpad-center-lbl">DIST</span>
+        <span id="pandaDistPct" class="dpad-center-val">50%</span>
+      </div>
+      <button type="button" class="dpad-btn dpad-right" data-dx="1" data-dy="0" aria-label="Aim Right">
+        <span class="dpad-arrow">▶</span>
+      </button>
+      <button type="button" class="dpad-btn dpad-down" data-dx="0" data-dy="-1" aria-label="Closer">
+        <span class="dpad-tag">NEAR</span>
+        <span class="dpad-arrow">▼</span>
+      </button>
+    </div>
+    <div class="control-caption">RANGE ▲▼ • AIM ◀▶</div>
   `;
-  wrap.appendChild(chargeWrap);
+  wrap.appendChild(dpadWrap);
+
+  const dpadButtons = [...dpadWrap.querySelectorAll('.dpad-btn')];
+  const activeDpadPointers = new Map(); // pointerId -> { dx, dy, btn }
+  const emitDpad = () => {
+    let dpadX = 0;
+    let dpadY = 0;
+    for (const v of activeDpadPointers.values()) {
+      if (v.dx !== 0) dpadX = v.dx;
+      if (v.dy !== 0) dpadY = v.dy;
+    }
+    onDpad({ dpadX, dpadY });
+  };
+
+  for (const btn of dpadButtons) {
+    const dx = Number(btn.dataset.dx);
+    const dy = Number(btn.dataset.dy);
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sound.unlock();
+      btn.setPointerCapture(e.pointerId);
+      btn.classList.add('pressed');
+      activeDpadPointers.set(e.pointerId, { dx, dy, btn });
+      emitDpad();
+    });
+    const release = (e) => {
+      if (!activeDpadPointers.has(e.pointerId)) return;
+      e.preventDefault();
+      activeDpadPointers.delete(e.pointerId);
+      const stillHeld = [...activeDpadPointers.values()].some((v) => v.btn === btn);
+      if (!stillHeld) btn.classList.remove('pressed');
+      emitDpad();
+    };
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+  }
+
+  const onBlur = () => {
+    if (activeDpadPointers.size > 0) {
+      activeDpadPointers.clear();
+      for (const b of dpadButtons) b.classList.remove('pressed');
+      onDpad({ dpadX: 0, dpadY: 0 });
+    }
+  };
+  window.addEventListener('blur', onBlur);
 
   // Lower-right Illustrated Cartoon Weapon Wheel!
   const wheelWrap = document.createElement('div');
@@ -1080,8 +1145,7 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
     turnLabelEl: topBanner.querySelector('#pandaTurnLabel'),
     timerEl: topBanner.querySelector('#pandaTimerText'),
     windEl: topBanner.querySelector('#pandaWindText'),
-    chargeWrap,
-    chargeFill: chargeWrap.querySelector('#pandaChargeFill'),
+    distPctEl: dpadWrap.querySelector('#pandaDistPct'),
     arcTopEl: wheelWrap.querySelector('#wheelArcTop'),
     arcDegEl: wheelWrap.querySelector('#wheelArcDeg'),
     setSelectedWeapon(weaponId) {
@@ -1090,6 +1154,7 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
       }
     },
     dispose() {
+      window.removeEventListener('blur', onBlur);
       wrap.remove();
     },
   };
@@ -1126,12 +1191,9 @@ export class PandaRamenClient {
       shoot: 'FIRE',
       jumpIcon: '🐼',
       shootIcon: '🚀',
-      badge: 'HOLD + RELEASE',
+      badge: 'ROCKET LAUNCHER',
       armed: true,
     };
-
-    this._stickCaptionEl = document.querySelector('#touchOverlay .control-caption');
-    if (this._stickCaptionEl) this._stickCaptionEl.textContent = 'AIM';
 
     this._initMaterials();
     this._buildLights();
@@ -1151,6 +1213,9 @@ export class PandaRamenClient {
       onCycleArc: () => {
         sfx.wheelClick();
         this.sendAction({ arcCycle: true });
+      },
+      onDpad: ({ dpadX, dpadY }) => {
+        this.sendAction({ dpadX, dpadY });
       },
     });
 
@@ -1852,13 +1917,14 @@ export class PandaRamenClient {
       }
     }
 
-    // Update lower-right Weapon Wheel & Turn HUD
+    // Update lower-right Weapon Wheel, D-Pad Distance readout & Turn HUD
     this.ui.setSelectedWeapon(state.selectedWeapon);
-    const deg = typeof state.aimDeg === 'number'
-      ? state.aimDeg
-      : (ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1]).deg;
-    this.ui.arcTopEl.textContent = deg <= 32 ? 'FLAT' : deg >= 55 ? 'LOB' : 'ANGLE';
-    this.ui.arcDegEl.textContent = `${deg}°`;
+    const arc = ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1];
+    this.ui.arcTopEl.textContent = arc.label;
+    this.ui.arcDegEl.textContent = `${arc.deg}°`;
+    if (this.ui.distPctEl && typeof state.aimDistancePct === 'number') {
+      this.ui.distPctEl.textContent = `${state.aimDistancePct}%`;
+    }
 
     this.ui.redScoreEl.textContent = `🍜 ${state.ramenLeft[0]}`;
     this.ui.blueScoreEl.textContent = `${state.ramenLeft[1]} 🍜`;
@@ -1879,21 +1945,16 @@ export class PandaRamenClient {
     const windLabel = windMag < 0.45 ? 'Calm' : windMag < 1.1 ? 'Breeze' : 'Gusty';
     this.ui.windEl.textContent = `🍃 ${windLabel} ${windArrows[windIdx]}`;
 
-    this.ui.chargeWrap.classList.toggle('hidden', !state.isCharging);
-    if (state.isCharging) {
-      this.ui.chargeFill.style.width = `${Math.round(state.chargePower * 100)}%`;
-    }
-
-    // Touch action button labels (secondary button swaps active panda!)
+    // Touch action button labels (secondary button swaps active panda, FIRE shoots immediately!)
     const activeWeapon = WEAPON_BY_ID[state.selectedWeapon] || WEAPONS[0];
     const canSwap = (state.ramenLeft?.[state.activeTeam] || 0) > 1;
     this.controlLabels = isMyTurn && state.phase === 'aim'
       ? {
           jump: canSwap ? 'NEXT' : 'SOLO',
-          shoot: state.isCharging ? 'RELEASE!' : 'FIRE',
+          shoot: 'FIRE',
           jumpIcon: '🐼',
           shootIcon: state.selectedWeapon === 'ramen-bomb' ? '🍜' : state.selectedWeapon === 'bouncing-tire' ? '🛞' : '🚀',
-          badge: state.isCharging ? `${Math.round(state.chargePower * 100)}%` : activeWeapon.displayName.toUpperCase(),
+          badge: activeWeapon.displayName.toUpperCase(),
           armed: true,
         }
       : {
@@ -2158,7 +2219,7 @@ export class PandaRamenClient {
     const pitchRad = typeof s.aimPitch === 'number'
       ? s.aimPitch
       : (ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1]).rad;
-    const power = s.isCharging ? s.chargePower : 0.62;
+    const power = typeof s.aimPower === 'number' ? s.aimPower : (s.isCharging ? s.chargePower : 0.62);
     const speed = weapon.speed * (0.42 + 0.72 * power);
     const sinY = Math.sin(pd.yaw);
     const cosY = Math.cos(pd.yaw);
@@ -2330,7 +2391,6 @@ export class PandaRamenClient {
 
   dispose() {
     window.removeEventListener('keydown', this._onKeyDown);
-    if (this._stickCaptionEl) this._stickCaptionEl.textContent = 'MOVE';
     if (this.ui) this.ui.dispose();
     this.boardRoot.remove(this.group);
   }

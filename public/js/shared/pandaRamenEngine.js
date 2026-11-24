@@ -34,8 +34,11 @@ export const MAX_RAMEN_HP = 100;
 export const MIN_AIM_PITCH = (15 * Math.PI) / 180;
 export const MAX_AIM_PITCH = (74 * Math.PI) / 180;
 export const DEFAULT_AIM_PITCH = (44 * Math.PI) / 180;
-export const AIM_YAW_RATE = 1.95; // rad/s left-right aiming
-export const AIM_PITCH_RATE = 1.15; // rad/s up-down launch angle
+export const MIN_AIM_POWER = 0.24;
+export const MAX_AIM_POWER = 1.0;
+export const DEFAULT_AIM_POWER = 0.62;
+export const AIM_YAW_RATE = 1.55; // rad/s D-Pad left/right direction
+export const AIM_POWER_RATE = 0.52; // power/s D-Pad up/down distance
 
 export const ARC_ANGLES = [
   { id: 'low', label: 'FLAT', deg: 26, rad: (26 * Math.PI) / 180 },
@@ -448,6 +451,8 @@ function blankInput() {
     moveZ: 0,
     stickX: null,
     stickY: null,
+    dpadX: 0,
+    dpadY: 0,
     jump: false,
     shoot: false,
     weapon: null,
@@ -515,7 +520,8 @@ export class PandaRamenEngine {
     this.selectedWeaponId = 'rocket-launcher';
     this.arcIndex = 1; // Classic 44 deg preset index
     this.aimPitch = DEFAULT_AIM_PITCH;
-    this.chargePower = 0;
+    this.aimPower = DEFAULT_AIM_POWER;
+    this.chargePower = DEFAULT_AIM_POWER;
     this.chargeDir = 1;
     this.isCharging = false;
     this.shotFiredThisTurn = false;
@@ -686,6 +692,8 @@ export class PandaRamenEngine {
       moveZ: typeof input.moveZ === 'number' ? clamp(input.moveZ, -1, 1) : prev.moveZ,
       stickX: typeof input.stickX === 'number' ? clamp(input.stickX, -1, 1) : prev.stickX,
       stickY: typeof input.stickY === 'number' ? clamp(input.stickY, -1, 1) : prev.stickY,
+      dpadX: typeof input.dpadX === 'number' ? clamp(Math.round(input.dpadX), -1, 1) : prev.dpadX,
+      dpadY: typeof input.dpadY === 'number' ? clamp(Math.round(input.dpadY), -1, 1) : prev.dpadY,
       jump: typeof input.jump === 'boolean' ? input.jump : prev.jump,
       shoot: typeof input.shoot === 'boolean' ? input.shoot : prev.shoot,
       weapon: prev.weapon,
@@ -766,7 +774,8 @@ export class PandaRamenEngine {
     this.phaseTimer = 0;
     this.turnTimeLeft = TURN_DURATION;
     this.isCharging = false;
-    this.chargePower = 0;
+    this.aimPower = DEFAULT_AIM_POWER;
+    this.chargePower = DEFAULT_AIM_POWER;
     this.chargeDir = 1;
     this.shotFiredThisTurn = false;
     this.botPlan = null;
@@ -1248,12 +1257,12 @@ export class PandaRamenEngine {
           if (this.botPlan.thinkTimer <= 0) {
             this.botPlan.stage = 'charge';
             this.isCharging = true;
-            this.chargePower = 0.25;
           }
         } else if (this.botPlan.stage === 'charge') {
           this.botPlan.chargeTimer += dt;
           const t = clamp(this.botPlan.chargeTimer / this.botPlan.chargeDuration, 0, 1);
-          this.chargePower = 0.25 + (this.botPlan.aimPower - 0.25) * t;
+          this.aimPower = DEFAULT_AIM_POWER + (this.botPlan.aimPower - DEFAULT_AIM_POWER) * t;
+          this.chargePower = this.aimPower;
           if (t >= 1) {
             this.botPlan.stage = 'done';
             this._fireWeapon(panda, this.selectedWeaponId, this.botPlan.aimPower, this.botPlan.pitchRad);
@@ -1263,54 +1272,49 @@ export class PandaRamenEngine {
       return;
     }
 
-    // Human player control — stationary aiming!
-    // Left stick: left/right rotates aim yaw, up/down tilts launch angle (no movement).
+    // Human player control — precision 4-way D-Pad aiming!
+    // Left / Right adjusts direction (yaw) independently.
+    // Up / Down adjusts distance (aimPower) independently.
     const inp = this.inputs.get(this.activeControllerId) || blankInput();
     const wasShoot = Boolean(this.prevShoot.get(this.activeControllerId));
     const wasJump = Boolean(this.prevJump.get(this.activeControllerId));
     this.prevShoot.set(this.activeControllerId, Boolean(inp.shoot));
     this.prevJump.set(this.activeControllerId, Boolean(inp.jump));
 
-    const sx = inp.stickX !== null ? inp.stickX : inp.moveX;
-    const sy = inp.stickY !== null ? inp.stickY : -inp.moveZ;
-
-    if (Math.abs(sx) > 0.08) {
-      panda.yaw = normalizeAngle(panda.yaw - sx * AIM_YAW_RATE * dt);
+    let dx = inp.dpadX || 0;
+    let dy = inp.dpadY || 0;
+    // Cardinal fallback for keyboard WASD / Arrow keys routed through TouchControls
+    if (dx === 0 && dy === 0) {
+      const sx = inp.stickX !== null ? inp.stickX : inp.moveX;
+      const sy = inp.stickY !== null ? inp.stickY : -inp.moveZ;
+      if (Math.abs(sx) > 0.35 || Math.abs(sy) > 0.35) {
+        if (Math.abs(sx) >= Math.abs(sy)) dx = sx > 0 ? 1 : -1;
+        else dy = sy > 0 ? 1 : -1;
+      }
     }
-    if (Math.abs(sy) > 0.08) {
-      this.aimPitch = clamp(this.aimPitch + sy * AIM_PITCH_RATE * dt, MIN_AIM_PITCH, MAX_AIM_PITCH);
+
+    if (dx !== 0) {
+      panda.yaw = normalizeAngle(panda.yaw - dx * AIM_YAW_RATE * dt);
+    }
+    if (dy !== 0) {
+      this.aimPower = clamp(this.aimPower + dy * AIM_POWER_RATE * dt, MIN_AIM_POWER, MAX_AIM_POWER);
+      this.chargePower = this.aimPower;
     }
 
-    // Secondary button (formerly HOP) cycles to the next panda on your team before shooting!
-    if (inp.jump && !wasJump && !this.isCharging) {
+    // Secondary button cycles to the next panda on your team before shooting
+    if (inp.jump && !wasJump) {
       this._switchActivePanda();
     }
 
-    // Hold FIRE to charge power, Release to launch!
-    if (inp.shoot) {
-      if (!this.isCharging) {
-        this.isCharging = true;
-        this.chargePower = 0.26;
-        this.chargeDir = 1;
-      } else {
-        this.chargePower += this.chargeDir * dt * 0.92;
-        if (this.chargePower >= 1.0) {
-          this.chargePower = 1.0;
-          this.chargeDir = -1;
-        } else if (this.chargePower <= 0.25) {
-          this.chargePower = 0.25;
-          this.chargeDir = 1;
-        }
-      }
-    } else if (wasShoot && this.isCharging) {
-      this._fireWeapon(panda, this.selectedWeaponId, this.chargePower, this.aimPitch);
+    // Tap FIRE to launch immediately along the exact dialed-in direction & distance!
+    if (inp.shoot && !wasShoot) {
+      this._fireWeapon(panda, this.selectedWeaponId, this.aimPower, this.aimPitch);
       return;
     }
 
     // Auto-fire if turn timer runs out
     if (this.turnTimeLeft <= 0) {
-      const power = this.isCharging ? this.chargePower : 0.62;
-      this._fireWeapon(panda, this.selectedWeaponId, power, this.aimPitch);
+      this._fireWeapon(panda, this.selectedWeaponId, this.aimPower, this.aimPitch);
     }
   }
 
@@ -1658,6 +1662,8 @@ export class PandaRamenEngine {
       arcIndex: this.arcIndex,
       aimPitch: Number(this.aimPitch.toFixed(4)),
       aimDeg: Math.round((this.aimPitch * 180) / Math.PI),
+      aimPower: Number(this.aimPower.toFixed(3)),
+      aimDistancePct: Math.round(((this.aimPower - MIN_AIM_POWER) / (MAX_AIM_POWER - MIN_AIM_POWER)) * 100),
       isCharging: this.isCharging,
       chargePower: Number(this.chargePower.toFixed(3)),
       windX: this.windX,

@@ -1002,7 +1002,98 @@ html, body {
   fill: #fef08a;
 }
 
-/* Shift right touch action buttons cleanly to the left of the lower-right wheel */
+/* Hide analog stick & shift right action buttons cleanly for Panda Ramen Rumble */
+.touch-overlay.panda-ramen-active .left-controls {
+  display: none;
+}
+
+.panda-dpad-wrap {
+  position: fixed;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.panda-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(3, 48px);
+  gap: 4px;
+  pointer-events: auto;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+}
+
+.dpad-btn {
+  border: 2px solid rgba(255, 255, 255, 0.36);
+  background: rgba(15, 23, 42, 0.78);
+  color: #f8fafc;
+  backdrop-filter: blur(8px);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  touch-action: none;
+  padding: 0;
+  transition: transform 0.06s ease, background 0.08s ease, border-color 0.08s ease;
+}
+
+.dpad-btn.pressed {
+  transform: scale(0.92);
+  background: rgba(56, 189, 248, 0.85);
+  border-color: #ffffff;
+  color: #020617;
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; border-radius: 14px 14px 6px 6px; }
+.dpad-left { grid-column: 1; grid-row: 2; border-radius: 14px 6px 6px 14px; }
+.dpad-center {
+  grid-column: 2;
+  grid-row: 2;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid rgba(247, 226, 49, 0.65);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+.dpad-right { grid-column: 3; grid-row: 2; border-radius: 6px 14px 14px 6px; }
+.dpad-down { grid-column: 2; grid-row: 3; border-radius: 6px 6px 14px 14px; }
+
+.dpad-arrow {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.dpad-tag {
+  font-size: 8.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.dpad-center-lbl {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.dpad-center-val {
+  font-size: 12px;
+  font-weight: 900;
+  color: #fef08a;
+}
+
 .touch-overlay.panda-ramen-active .right-controls {
   right: max(240px, calc(env(safe-area-inset-right) + 236px));
   bottom: max(20px, env(safe-area-inset-bottom));
@@ -1021,6 +1112,10 @@ html, body {
 }
 
 @media (max-width: 680px) {
+  .panda-dpad {
+    grid-template-columns: repeat(3, 42px);
+    grid-template-rows: repeat(3, 42px);
+  }
   .panda-weapon-wheel {
     width: 164px;
     height: 164px;

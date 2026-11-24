@@ -62,13 +62,11 @@ test('weapon wheel switching, charging, and firing works for all 6 whimsical wea
     e.handleInput('p1', { weapon: w.id });
     assert.equal(e.getState().selectedWeapon, w.id, `selected ${w.id}`);
 
-    // Charge then release FIRE
-    e.handleInput('p1', { shoot: true });
-    for (let i = 0; i < 15; i++) e.tick(1 / 30);
-    assert.equal(e.getState().isCharging, true);
-    assert.ok(e.getState().chargePower > 0.35);
+    // Dial distance slightly with D-Pad Up, then tap FIRE to launch immediately
+    e.handleInput('p1', { dpadY: 1 });
+    for (let i = 0; i < 6; i++) e.tick(1 / 30);
+    e.handleInput('p1', { dpadY: 0, shoot: true });
 
-    e.handleInput('p1', { shoot: false });
     let sawFire = false;
     let sawSplit = false;
     let sawBounce = false;
@@ -76,6 +74,7 @@ test('weapon wheel switching, charging, and firing works for all 6 whimsical wea
 
     for (let i = 0; i < 30 * 8; i++) {
       e.tick(1 / 30);
+      if (i === 1) e.handleInput('p1', { shoot: false });
       for (const ev of e.events) {
         if (ev.type === 'fire') sawFire = true;
         if (ev.type === 'cluster_split') sawSplit = true;
@@ -145,28 +144,34 @@ test('hot-joining and disconnecting players preserves both teams', () => {
   assert.ok(e.getState().players.some((p) => p.team === 1), 'fallback AI restores Blue Team');
 });
 
-test('left stick aims yaw and launch angle without moving panda, and NEXT PANDA cycles team pandas without hopping', () => {
+test('D-Pad controls direction and distance independently without moving panda, and NEXT cycles pandas without hopping', () => {
   const e = new PandaRamenEngine([{ id: 'p1', name: 'P1' }, { id: 'p2', name: 'P2' }], {}, seeded(33));
   const before = e.getState();
   const activeBefore = before.pandas.find((p) => p.id === before.activePandaId);
 
-  // Push stick right (+1) and up (+1) for 0.5s: yaw rotates, pitch rises, position stays stationary!
-  e.handleInput('p1', { stickX: 1, stickY: 1, moveX: 1, moveZ: -1 });
-  for (let i = 0; i < 15; i++) e.tick(1 / 30);
+  // 1. D-Pad Right ONLY changes direction (yaw), leaving distance (aimPower) and position untouched!
+  e.handleInput('p1', { dpadX: 1, dpadY: 0 });
+  for (let i = 0; i < 12; i++) e.tick(1 / 30);
+  const afterYaw = e.getState();
+  const pAfterYaw = afterYaw.pandas.find((p) => p.id === before.activePandaId);
+  assert.equal(pAfterYaw.x, activeBefore.x, 'panda X stays stationary');
+  assert.equal(pAfterYaw.z, activeBefore.z, 'panda Z stays stationary');
+  assert.notEqual(pAfterYaw.yaw, activeBefore.yaw, 'D-Pad right rotates yaw');
+  assert.equal(afterYaw.aimPower, before.aimPower, 'D-Pad right does not alter distance');
 
-  const afterAim = e.getState();
-  const activeAfter = afterAim.pandas.find((p) => p.id === before.activePandaId);
-  assert.equal(activeAfter.x, activeBefore.x, 'panda X does not move when aiming');
-  assert.equal(activeAfter.z, activeBefore.z, 'panda Z does not move when aiming');
-  assert.equal(activeAfter.y, activeBefore.y, 'panda Y does not change when aiming');
-  assert.notEqual(activeAfter.yaw, activeBefore.yaw, 'stick left/right rotates aim yaw');
-  assert.ok(afterAim.aimPitch > before.aimPitch, 'stick up raises launch angle');
+  // 2. D-Pad Up ONLY increases distance (aimPower), leaving direction (yaw) untouched!
+  e.handleInput('p1', { dpadX: 0, dpadY: 1 });
+  for (let i = 0; i < 12; i++) e.tick(1 / 30);
+  const afterDist = e.getState();
+  const pAfterDist = afterDist.pandas.find((p) => p.id === before.activePandaId);
+  assert.equal(pAfterDist.yaw, pAfterYaw.yaw, 'D-Pad up does not alter yaw');
+  assert.ok(afterDist.aimPower > afterYaw.aimPower, 'D-Pad up increases shot distance');
 
-  // Press secondary button (jump -> NEXT PANDA) cycles cleanly through all 4 Red Team pandas without hopping
-  e.handleInput('p1', { stickX: 0, stickY: 0, jump: false });
+  // 3. Secondary button (NEXT PANDA) cycles cleanly through all 4 Red Team pandas without hopping
+  e.handleInput('p1', { dpadX: 0, dpadY: 0, jump: false });
   e.tick(1 / 30);
 
-  const visited = [afterAim.activePandaId];
+  const visited = [afterDist.activePandaId];
   for (let step = 0; step < 3; step++) {
     e.handleInput('p1', { jump: true });
     e.tick(1 / 30);
