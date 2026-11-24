@@ -24,7 +24,7 @@ export const GAME_CATALOG = [
     minPlayers: 1,
     maxPlayers: 8,
     status: 'playable',
-    controlsHint: 'Stick to aim & waddle • HOP onto zoo decks • Pick whimsical weapons on the lower-right wheel • Hold FIRE to charge!',
+    controlsHint: 'D-Pad: ◀▶ direction, ▲▼ distance • NEXT swaps panda • Pick weapon & ARC on wheel • Tap FIRE!',
   },
   {
     id: 'sumo-bumper',

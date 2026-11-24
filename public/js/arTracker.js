@@ -112,28 +112,28 @@ export class ARTracker {
 
   _addBoardLights() {
     const hemi = new THREE.HemisphereLight(0xdbeafe, 0x334155, 1.2);
-    const dir = new THREE.DirectionalLight(0xffffff, 1.35);
-    dir.position.set(5, 11, 6);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.38);
+    dir.position.set(9, 19, 10);
     dir.castShadow = true;
-    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.mapSize.set(2048, 2048);
     dir.shadow.camera.near = 1;
-    dir.shadow.camera.far = 34;
-    dir.shadow.camera.left = -10.5;
-    dir.shadow.camera.right = 10.5;
-    dir.shadow.camera.top = 10.5;
-    dir.shadow.camera.bottom = -10.5;
+    dir.shadow.camera.far = 54;
+    dir.shadow.camera.left = -16.5;
+    dir.shadow.camera.right = 16.5;
+    dir.shadow.camera.top = 16.5;
+    dir.shadow.camera.bottom = -16.5;
     this.boardRoot.add(hemi, dir, dir.target);
     this.lights = { hemi, dir };
   }
 
   setPreviewDist(dist) {
-    this.previewDist = Math.max(9, Math.min(24, Number(dist) || 13.5));
+    this.previewDist = Math.max(9, Math.min(36, Number(dist) || 13.5));
   }
 
   _createPreviewTabletop() {
     const group = new THREE.Group();
     const table = new THREE.Mesh(
-      new THREE.BoxGeometry(22, 0.6, 16),
+      new THREE.BoxGeometry(32, 0.6, 23),
       new THREE.MeshStandardMaterial({ color: 0x7c4d2b, roughness: 0.72, metalness: 0.05 }),
     );
     table.position.set(0, -0.45, 0);

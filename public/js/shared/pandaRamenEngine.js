@@ -13,10 +13,23 @@
  * opposing pandas tumbling and rolling back to their den for a cozy nap.
  */
 
-export const BOARD_WIDTH = 15.6;
-export const BOARD_DEPTH = 10.6;
+export const BOARD_WIDTH = 22.8;
+export const BOARD_DEPTH = 15.6;
 export const HALF_W = BOARD_WIDTH / 2;
 export const HALF_D = BOARD_DEPTH / 2;
+
+export const WATER_LEVEL = 0.04;
+
+// Waterfall enters from the back-north-west cliff edge and feeds a meandering stream to the front-east edge!
+export const WATERFALL_CONFIG = {
+  x: -3.6,
+  topZ: -HALF_D + 0.12,
+  lipZ: -6.35,
+  poolZ: -4.55,
+  topY: 4.95,
+  midY: 2.35,
+  width: 1.75,
+};
 
 export const BOT_DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const DEFAULT_BOT_DIFFICULTY = 'medium';
@@ -27,10 +40,18 @@ export function normalizeBotDifficulty(level) {
 }
 
 export const TURN_DURATION = 28;
-export const MOVE_STAMINA_MAX = 3.2; // seconds of waddling per turn
 export const GRAVITY = 13.5;
 export const PANDA_RADIUS = 0.48;
 export const MAX_RAMEN_HP = 100;
+
+export const MIN_AIM_PITCH = (15 * Math.PI) / 180;
+export const MAX_AIM_PITCH = (74 * Math.PI) / 180;
+export const DEFAULT_AIM_PITCH = (44 * Math.PI) / 180;
+export const MIN_AIM_POWER = 0.24;
+export const MAX_AIM_POWER = 1.0;
+export const DEFAULT_AIM_POWER = 0.62;
+export const AIM_YAW_RATE = 1.55; // rad/s D-Pad left/right direction
+export const AIM_POWER_RATE = 0.52; // power/s D-Pad up/down distance
 
 export const ARC_ANGLES = [
   { id: 'low', label: 'FLAT', deg: 26, rad: (26 * Math.PI) / 180 },
@@ -45,12 +66,12 @@ export const WEAPONS = [
     displayName: 'Rocket Launcher',
     color: '#f7e231',
     sliceIndex: 0,
-    speed: 13.2,
+    speed: 16.8,
     gravityScale: 0.68,
     damage: 68,
-    radius: 2.5,
-    knockback: 8.6,
-    upKnock: 5.2,
+    radius: 2.75,
+    knockback: 9.2,
+    upKnock: 5.5,
     bounces: 0,
     burstCount: 1,
     clusterCount: 0,
@@ -62,12 +83,12 @@ export const WEAPONS = [
     displayName: 'Ramen Bomb',
     color: '#f28c28',
     sliceIndex: 1,
-    speed: 11.4,
+    speed: 14.8,
     gravityScale: 1.0,
     damage: 76,
-    radius: 3.15,
-    knockback: 7.4,
-    upKnock: 4.8,
+    radius: 3.4,
+    knockback: 8.0,
+    upKnock: 5.1,
     bounces: 0,
     burstCount: 1,
     clusterCount: 0,
@@ -79,12 +100,12 @@ export const WEAPONS = [
     displayName: 'Bouncing Tire',
     color: '#f5c724',
     sliceIndex: 2,
-    speed: 11.8,
-    gravityScale: 1.05,
+    speed: 15.2,
+    gravityScale: 1.04,
     damage: 56,
-    radius: 2.2,
-    knockback: 10.6,
-    upKnock: 5.8,
+    radius: 2.45,
+    knockback: 11.2,
+    upKnock: 6.1,
     bounces: 3,
     burstCount: 1,
     clusterCount: 0,
@@ -96,12 +117,12 @@ export const WEAPONS = [
     displayName: 'Bamboo Bazooka',
     color: '#3895e8',
     sliceIndex: 3,
-    speed: 12.6,
+    speed: 16.0,
     gravityScale: 0.78,
     damage: 36,
-    radius: 1.85,
-    knockback: 6.6,
-    upKnock: 4.5,
+    radius: 2.05,
+    knockback: 7.0,
+    upKnock: 4.8,
     bounces: 0,
     burstCount: 3,
     clusterCount: 0,
@@ -113,12 +134,12 @@ export const WEAPONS = [
     displayName: 'Dumpling Drop',
     color: '#a54bd6',
     sliceIndex: 4,
-    speed: 11.5,
+    speed: 14.9,
     gravityScale: 0.96,
     damage: 34,
-    radius: 1.8,
-    knockback: 6.2,
-    upKnock: 4.4,
+    radius: 2.0,
+    knockback: 6.6,
+    upKnock: 4.6,
     bounces: 0,
     burstCount: 1,
     clusterCount: 4,
@@ -130,12 +151,12 @@ export const WEAPONS = [
     displayName: 'Melon Cannon',
     color: '#59c747',
     sliceIndex: 5,
-    speed: 12.0,
+    speed: 15.5,
     gravityScale: 0.9,
     damage: 60,
-    radius: 2.65,
-    knockback: 12.6,
-    upKnock: 7.4,
+    radius: 2.85,
+    knockback: 13.4,
+    upKnock: 7.8,
     bounces: 1,
     burstCount: 1,
     clusterCount: 0,
@@ -152,7 +173,7 @@ export const TEAMS = [
     name: 'Red Team',
     color: '#d94e3b',
     accent: '#f7c948',
-    den: { x: -4.2, y: 0.35, z: 3.35, yaw: -0.45 },
+    den: { x: -6.8, y: 0.72, z: 5.15, yaw: -0.42 },
   },
   {
     id: 1,
@@ -160,82 +181,96 @@ export const TEAMS = [
     name: 'Blue Team',
     color: '#3b7fb8',
     accent: '#7dd3fc',
-    den: { x: 2.35, y: 0.58, z: -1.72, yaw: 0.18 },
+    den: { x: 4.1, y: 1.45, z: -2.45, yaw: 0.16 },
   },
 ];
 
-// Walkable / decorative wooden zoo structures (mirrors the reference diorama)
+// Walkable & scenic wooden zoo structures spread across the 2x landscape
 export const ZOO_STRUCTURES = [
   {
     id: 'zoo-deck-upper',
     type: 'deck',
-    x: -0.55,
-    z: -3.25,
-    halfW: 0.95,
-    halfD: 0.62,
-    topY: 1.72,
-    rotY: -0.1,
+    x: 0.25,
+    z: -4.45,
+    halfW: 1.25,
+    halfD: 0.78,
+    topY: 2.75,
+    rotY: -0.12,
   },
   {
     id: 'zoo-deck-lower',
     type: 'deck',
-    x: -1.78,
-    z: -2.42,
-    halfW: 0.68,
-    halfD: 0.52,
-    topY: 1.05,
-    rotY: -0.1,
+    x: -1.15,
+    z: -3.25,
+    halfW: 0.85,
+    halfD: 0.62,
+    topY: 1.62,
+    rotY: -0.12,
     hasLadder: true,
   },
   {
     id: 'nw-zoo-table',
     type: 'table',
-    x: -5.35,
-    z: -2.05,
-    halfW: 0.55,
-    halfD: 0.44,
-    topY: 2.15,
-    rotY: 0.25,
+    x: -8.45,
+    z: -3.35,
+    halfW: 0.62,
+    halfD: 0.48,
+    topY: 3.15,
+    rotY: 0.28,
+  },
+  {
+    id: 'river-bridge',
+    type: 'bridge',
+    x: -0.15,
+    z: 0.35,
+    halfW: 1.55,
+    halfD: 0.65,
+    topY: 0.78,
+    rotY: -0.22,
+    arched: true,
   },
   {
     id: 'east-bridge',
     type: 'bridge',
-    x: 4.15,
-    z: -1.55,
-    halfW: 0.88,
-    halfD: 0.46,
-    topY: 1.08,
-    rotY: 0.32,
+    x: 6.55,
+    z: -2.45,
+    halfW: 1.15,
+    halfD: 0.56,
+    topY: 2.25,
+    rotY: 0.34,
   },
   {
     id: 'sw-den-bridge',
     type: 'bridge',
-    x: -4.25,
-    z: 2.85,
-    halfW: 0.82,
-    halfD: 0.48,
-    topY: 1.12,
-    rotY: 0.28,
+    x: -6.85,
+    z: 4.55,
+    halfW: 1.05,
+    halfD: 0.54,
+    topY: 1.62,
+    rotY: 0.26,
   },
 ];
 
-// Scattered lounge boulders in the meadow (for cozy sitting & physics bounce)
+// Scattered lounge boulders & river stepping rocks
 export const LOUNGE_BOULDERS = [
-  { id: 'boulder-center-w', x: -1.95, z: 0.65, r: 0.58, h: 0.52 },
-  { id: 'boulder-se', x: 3.65, z: 1.95, r: 0.68, h: 0.56 },
-  { id: 'boulder-sw-front', x: -5.35, z: 3.95, r: 0.66, h: 0.72 },
-  { id: 'boulder-sw-mid', x: -3.1, z: 3.55, r: 0.75, h: 0.85 },
+  { id: 'boulder-west-river', x: -3.65, z: 1.45, r: 0.72, h: 0.62 },
+  { id: 'boulder-se-lounge', x: 7.55, z: 3.35, r: 0.82, h: 0.68 },
+  { id: 'boulder-sw-front', x: -8.35, z: 5.55, r: 0.78, h: 0.88 },
+  { id: 'boulder-sw-mid', x: -5.25, z: 5.15, r: 0.84, h: 0.96 },
+  { id: 'boulder-mid-south', x: -0.45, z: 4.95, r: 0.68, h: 0.58 },
 ];
 
-// Bamboo cluster locations shared so engine/renderer stay harmonious
+// Lush bamboo groves framing peaks, riverbanks, and terraces (kept clear of spires & river!)
 export const BAMBOO_GROVES = [
-  { x: -6.7, z: -1.5, count: 6, height: 2.3 },
-  { x: -3.55, z: -2.95, count: 5, height: 2.1 },
-  { x: -5.0, z: -3.95, count: 5, height: 2.4 },
-  { x: 4.95, z: -2.9, count: 5, height: 2.0 },
-  { x: 0.85, z: 3.3, count: 5, height: 2.1 },
-  { x: -6.45, z: 4.15, count: 6, height: 2.2 },
-  { x: 6.45, z: 1.85, count: 4, height: 1.85 },
+  { x: -9.8, z: -1.3, count: 7, height: 2.9 },
+  { x: -6.3, z: -3.5, count: 5, height: 2.4 },
+  { x: -10.0, z: 1.6, count: 6, height: 2.7 },
+  { x: 7.4, z: -4.4, count: 6, height: 2.7 },
+  { x: -2.4, z: 5.5, count: 6, height: 2.5 },
+  { x: -9.4, z: 5.8, count: 7, height: 2.7 },
+  { x: 9.6, z: 2.6, count: 5, height: 2.4 },
+  { x: 6.2, z: 5.7, count: 5, height: 2.3 },
+  { x: 1.8, z: -4.8, count: 5, height: 2.4 },
 ];
 
 function clamp(v, min, max) {
@@ -253,80 +288,127 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
+/** Centerline X of the mountain stream flowing from the waterfall plunge pool to the front-right edge. */
+export function getRiverCenterX(z) {
+  const startZ = WATERFALL_CONFIG.poolZ;
+  const t = clamp((z - startZ) / (HALF_D - startZ), 0, 1);
+  return WATERFALL_CONFIG.x + t * 8.2 + Math.sin(t * Math.PI * 2.05) * 1.45;
+}
+
+/** Half-width of the stream at Z, widening smoothly at the waterfall plunge pool. */
+export function getRiverHalfWidth(z) {
+  const poolDist = Math.abs(z - WATERFALL_CONFIG.poolZ);
+  const poolBoost = poolDist < 1.9 ? (1 - poolDist / 1.9) * 1.15 : 0;
+  return 0.88 + poolBoost + 0.14 * Math.sin(z * 0.55);
+}
+
+/** True when (x, z) lies inside the flowing river channel or waterfall plunge pool. */
+export function isInRiver(x, z) {
+  if (z < WATERFALL_CONFIG.poolZ - 1.35) return false;
+  const cx = getRiverCenterX(z);
+  const hw = getRiverHalfWidth(z);
+  return Math.abs(x - cx) <= hw;
+}
+
 /**
- * Deterministic multi-feature terrain heightfield matching the reference diorama:
- * - NW dramatic rocky peak + broad mossy upper terrace
- * - NE terraced rocky mound with summit perch & Blue Team den
- * - East overhanging cliff ledge + back spire
- * - SW low mossy outcrops + Red Team den
- * - Gentle rolling grassy valley floor in the center
+ * Dramatic multi-tier vertical terrain heightfield (~2x board area):
+ * - Towering NW waterfall canyon headwall & mountain spires (up to y = 7.4!)
+ * - High NE summit mountain & terraced Blue Den cliff (plateau y = 4.1, spire y = 5.9)
+ * - Dramatic East overhanging cliff ledge & towering east pinnacle (ledge y = 2.9, spire y = 6.3)
+ * - Mid-tier NW mossy terrace (y = 2.4), SW Red Den mesas (y = 1.6), & South-West outcrop (y = 1.8)
+ * - Deeply carved waterfall plunge pool & meandering sunken river channel (y = -0.18)
  */
 export function getTerrainHeight(x, z) {
-  // Base gentle valley undulation
-  let h = 0.14
-    + 0.08 * Math.sin(x * 0.42 + 0.5) * Math.cos(z * 0.48 - 0.3)
-    + 0.04 * Math.cos(x * 0.9 - z * 0.7);
+  // Base gentle valley meadow undulation
+  let h = 0.28
+    + 0.11 * Math.sin(x * 0.32 + 0.5) * Math.cos(z * 0.36 - 0.3)
+    + 0.06 * Math.cos(x * 0.65 - z * 0.55);
 
-  // Helper: smooth rounded plateau / rock mesa
-  const plateau = (cx, cz, rx, rz, height, sharpness = 2.6) => {
+  const plateau = (cx, cz, rx, rz, height, sharpness = 2.5) => {
     const dx = (x - cx) / rx;
     const dz = (z - cz) / rz;
     const d = Math.hypot(dx, dz);
-    if (d >= 1.35) return 0;
-    const f = 1 - smoothstep(0.42, 1.18, d);
+    if (d >= 1.38) return 0;
+    const f = 1 - smoothstep(0.4, 1.2, d);
     return height * Math.pow(f, sharpness * 0.42);
   };
 
-  // Helper: sharper rocky spire peak
   const spire = (cx, cz, rx, rz, height) => {
     const dx = (x - cx) / rx;
     const dz = (z - cz) / rz;
     const d = Math.hypot(dx, dz);
-    if (d >= 1.25) return 0;
-    const f = Math.max(0, 1 - d * 0.92);
-    return height * Math.pow(f, 1.65);
+    if (d >= 1.28) return 0;
+    const f = Math.max(0, 1 - d * 0.9);
+    return height * Math.pow(f, 1.55);
   };
 
-  // 1. NW Broad Mossy Terrace (where Bao & zoo feeding table sit)
-  h = Math.max(h, plateau(-4.95, -1.35, 2.35, 1.95, 1.38, 2.2));
-  h = Math.max(h, plateau(-3.85, -1.75, 1.65, 1.45, 1.26, 2.4));
+  // 1. NW Broad Elevated Terrace (where Bao & zoo feeding table sit) + West Mid-Ledge (Mochi)
+  h = Math.max(h, plateau(-7.65, -2.55, 3.25, 2.75, 2.45, 2.2));
+  h = Math.max(h, plateau(-6.65, 1.95, 2.45, 2.05, 1.48, 2.3));
 
-  // 2. NW Tall Dramatic Rocky Peak (back-left spire)
-  h = Math.max(h, spire(-6.25, -3.55, 1.95, 1.65, 4.15));
-  h = Math.max(h, spire(-5.15, -3.65, 1.45, 1.35, 2.75));
-  h = Math.max(h, spire(-6.65, -2.0, 1.25, 1.45, 2.45));
+  // 2. NW Towering Waterfall Gorge Headwall & Mountain Spires!
+  // Waterfall pours off the cliff saddle at (-3.6, -6.5..-7.8) flanked by soaring peaks!
+  h = Math.max(h, plateau(-3.6, -7.15, 2.15, 1.45, WATERFALL_CONFIG.topY, 3.0));
+  h = Math.max(h, spire(-8.95, -5.45, 2.65, 2.25, 7.25));
+  h = Math.max(h, spire(-6.65, -5.85, 2.15, 1.85, 5.75));
+  h = Math.max(h, spire(-9.85, -3.15, 1.95, 2.15, 4.45));
+  h = Math.max(h, spire(-1.35, -6.45, 1.75, 1.55, 5.15)); // Right wall framing waterfall!
 
-  // 3. NE Rounded Rocky Mound & Summit Peak (Blue Team den sits in front face)
-  h = Math.max(h, plateau(2.15, -2.55, 2.55, 1.85, 0.95, 2.0));
-  h = Math.max(h, plateau(2.35, -3.35, 1.75, 1.35, 2.25, 2.4));
-  h = Math.max(h, spire(2.55, -3.85, 1.2, 0.95, 2.55));
+  // 3. NE Towering Terraced Mountain & High Summit Plateau (Dumpling sits way up at y ~ 4.1!)
+  h = Math.max(h, plateau(4.0, -3.65, 3.65, 2.65, 1.75, 2.1));
+  h = Math.max(h, plateau(3.85, -4.85, 2.55, 1.95, 4.1, 2.5));
+  h = Math.max(h, spire(4.65, -6.05, 2.0, 1.6, 5.85));
 
-  // 4. East Overhang Outcrop & Right Spire (where Matcha lounges high up)
-  h = Math.max(h, plateau(5.65, -0.35, 1.78, 1.75, 1.52, 2.5));
-  h = Math.max(h, spire(6.65, -1.75, 1.35, 1.45, 3.45));
-  h = Math.max(h, plateau(6.15, 0.95, 1.25, 1.1, 0.78, 2.2));
+  // 4. Far-East Overhanging Cliff Ledge (Matcha at y ~ 2.9) & Soaring East Pinnacle (y = 6.3!)
+  h = Math.max(h, plateau(8.25, -0.55, 2.55, 2.45, 2.9, 2.5));
+  h = Math.max(h, spire(9.75, -2.85, 2.1, 2.15, 6.25));
+  h = Math.max(h, plateau(8.95, 1.65, 1.95, 1.65, 1.45, 2.3));
 
-  // 5. SW Rocky Outcrops framing the Red Team Den & bridge
-  h = Math.max(h, plateau(-5.55, 3.55, 1.45, 1.2, 1.05, 2.4));
-  h = Math.max(h, plateau(-3.05, 3.35, 1.35, 1.25, 1.08, 2.3));
+  // 5. SW Rocky Outcrops framing the Red Team Den + South-Central Mesa (Sesame at y ~ 1.75)
+  h = Math.max(h, plateau(-8.35, 5.15, 2.15, 1.75, 1.65, 2.4));
+  h = Math.max(h, plateau(-5.35, 4.95, 1.95, 1.75, 1.6, 2.3));
+  h = Math.max(h, plateau(-3.15, 5.15, 2.15, 1.75, 1.78, 2.4));
 
-  // 6. Subtle natural rim edges so the diorama feels carved into the wood tray
-  const edgeX = smoothstep(HALF_W - 0.55, HALF_W, Math.abs(x));
-  const edgeZ = smoothstep(HALF_D - 0.55, HALF_D, Math.abs(z));
-  const rimDrop = Math.max(edgeX, edgeZ);
-  h = h * (1 - rimDrop * 0.45) + 0.08 * rimDrop;
+  // 6. SE Rolling Knoll (Tofu lounges on sunny grassy knoll across the river)
+  h = Math.max(h, plateau(6.55, 3.65, 2.45, 2.05, 0.88, 2.0));
 
-  return Math.max(0.08, h);
+  // 7. Carve the sunken Waterfall Plunge Pool & Meandering Mountain River Channel!
+  if (z >= WATERFALL_CONFIG.poolZ - 1.55) {
+    const cx = getRiverCenterX(z);
+    const hw = getRiverHalfWidth(z);
+    const dist = Math.abs(x - cx);
+    const bankOuter = hw + 1.35;
+    if (dist < bankOuter) {
+      const bankFade = 1 - smoothstep(hw * 0.45, bankOuter, dist);
+      // Smoothly ramp in right below the waterfall cliff face
+      const headFade = smoothstep(WATERFALL_CONFIG.poolZ - 1.55, WATERFALL_CONFIG.poolZ - 0.15, z);
+      const carve = bankFade * headFade;
+      const bedY = dist < hw * 0.72 ? -0.18 : 0.02;
+      h = h * (1 - carve) + bedY * carve;
+    }
+  }
+
+  // 8. Subtle natural diorama edge bevel (preserve waterfall entry & river exit cleanly!)
+  const inWaterfallChute = z < -HALF_D + 1.4 && Math.abs(x - WATERFALL_CONFIG.x) < 1.8;
+  const inRiverExit = z > HALF_D - 1.4 && Math.abs(x - getRiverCenterX(HALF_D)) < 1.8;
+  if (!inWaterfallChute && !inRiverExit) {
+    const edgeX = smoothstep(HALF_W - 0.65, HALF_W, Math.abs(x));
+    const edgeZ = smoothstep(HALF_D - 0.65, HALF_D, Math.abs(z));
+    const rimDrop = Math.max(edgeX, edgeZ);
+    h = h * (1 - rimDrop * 0.35) + 0.14 * rimDrop;
+  }
+
+  return Math.max(-0.2, h);
 }
 
 /**
  * Returns the playable surface height at (x, z), including wooden zoo decks
- * and bridges when the entity is at or above them (or climbing via ladder).
+ * and bridges when the entity is at or above them.
  */
 export function getSurfaceHeight(x, z, currentY = 99) {
-  let h = getTerrainHeight(x, z);
+  let h = Math.max(WATER_LEVEL - 0.02, getTerrainHeight(x, z));
   for (const s of ZOO_STRUCTURES) {
-    if (s.type === 'table') continue; // table is a prop for ramen, not main walk floor
+    if (s.type === 'table') continue;
     const dx = x - s.x;
     const dz = z - s.z;
     const cos = Math.cos(-s.rotY);
@@ -334,7 +416,7 @@ export function getSurfaceHeight(x, z, currentY = 99) {
     const lx = dx * cos + dz * sin;
     const lz = -dx * sin + dz * cos;
     if (Math.abs(lx) <= s.halfW + 0.16 && Math.abs(lz) <= s.halfD + 0.16) {
-      if (currentY >= s.topY - 0.55) {
+      if (currentY >= s.topY - 0.65) {
         h = Math.max(h, s.topY);
       }
     }
@@ -342,7 +424,7 @@ export function getSurfaceHeight(x, z, currentY = 99) {
   return h;
 }
 
-// Initial spread-out positions for the 2 teams of 4 pandas (matching reference image!)
+// Spread-out positions for the 2 teams of 4 pandas across towering peaks, mid ledges, and riverside meadows!
 const PANDA_SPAWNS = [
   // Team 0 (RED) — 4 pandas
   {
@@ -350,9 +432,9 @@ const PANDA_SPAWNS = [
     name: 'Mochi',
     team: 0,
     slot: 0,
-    x: -4.25,
-    z: 1.15,
-    yaw: 1.12, // Facing across the board toward Blue Team!
+    x: -6.65,
+    z: 1.95, // Mid-elevation sunlit west terrace overlooking the winding stream!
+    yaw: 1.15,
     idlePose: 'eat_ramen',
     ramenPlacement: 'beside',
   },
@@ -361,9 +443,9 @@ const PANDA_SPAWNS = [
     name: 'Bao',
     team: 0,
     slot: 1,
-    x: -4.45,
-    z: -1.15,
-    yaw: 0.72,
+    x: -7.15,
+    z: -2.25, // High NW mossy cliff terrace beside waterfall & zoo table (y ~ 2.45)
+    yaw: 0.82,
     idlePose: 'bamboo_sit',
     ramenPlacement: 'beside',
   },
@@ -372,9 +454,9 @@ const PANDA_SPAWNS = [
     name: 'Yuzu',
     team: 0,
     slot: 2,
-    x: -1.15,
-    z: 0.72,
-    yaw: 0.45,
+    x: -2.75,
+    z: 1.35, // Low riverside meadow next to the arched wooden river bridge!
+    yaw: 0.68,
     idlePose: 'eat_ramen',
     ramenPlacement: 'paws',
   },
@@ -383,9 +465,9 @@ const PANDA_SPAWNS = [
     name: 'Sesame',
     team: 0,
     slot: 3,
-    x: -1.35,
-    z: 3.15,
-    yaw: 0.35,
+    x: -3.15,
+    z: 5.15, // South-West elevated rocky outcrop mesa (y ~ 1.78)
+    yaw: 0.42,
     idlePose: 'lazy_roll',
     ramenPlacement: 'beside',
   },
@@ -396,9 +478,9 @@ const PANDA_SPAWNS = [
     name: 'Dumpling',
     team: 1,
     slot: 0,
-    x: 2.35,
-    z: -3.28, // Perched high up on the NE summit peak!
-    yaw: -0.25,
+    x: 3.85,
+    z: -4.75, // TOWERING NE Mountain Summit Peak (y ~ 4.1!)
+    yaw: -0.35,
     idlePose: 'bamboo_sit',
     ramenPlacement: 'beside',
   },
@@ -407,9 +489,9 @@ const PANDA_SPAWNS = [
     name: 'Matcha',
     team: 1,
     slot: 1,
-    x: 5.55,
-    z: -0.28, // Lounging on the East overhanging outcrop!
-    yaw: -1.08,
+    x: 8.15,
+    z: -0.55, // High East Overhanging Cliff Ledge (y ~ 2.9!)
+    yaw: -1.18,
     idlePose: 'bamboo_sit',
     ramenPlacement: 'beside',
   },
@@ -418,9 +500,9 @@ const PANDA_SPAWNS = [
     name: 'Noodle',
     team: 1,
     slot: 2,
-    x: 1.48,
-    z: -0.15, // Sitting in the central meadow eating bamboo
-    yaw: -0.65,
+    x: 2.35,
+    z: -0.15, // Low East riverside grassy meadow across the bridge!
+    yaw: -0.78,
     idlePose: 'bamboo_sit',
     ramenPlacement: 'beside',
   },
@@ -429,9 +511,9 @@ const PANDA_SPAWNS = [
     name: 'Tofu',
     team: 1,
     slot: 3,
-    x: 2.88,
-    z: 2.05, // Lounging back with ramen bowl resting on big round belly!
-    yaw: -0.82,
+    x: 6.45,
+    z: 3.55, // Sunny SE grassy knoll lounging back with ramen resting on belly!
+    yaw: -0.95,
     idlePose: 'belly_ramen',
     ramenPlacement: 'belly',
   },
@@ -441,6 +523,10 @@ function blankInput() {
   return {
     moveX: 0,
     moveZ: 0,
+    stickX: null,
+    stickY: null,
+    dpadX: 0,
+    dpadY: 0,
     jump: false,
     shoot: false,
     weapon: null,
@@ -506,11 +592,12 @@ export class PandaRamenEngine {
     this.activePandaId = null;
     this.activeControllerId = null;
     this.selectedWeaponId = 'rocket-launcher';
-    this.arcIndex = 1; // Classic 44 deg arc
-    this.chargePower = 0;
+    this.arcIndex = 1; // Classic 44 deg preset index
+    this.aimPitch = DEFAULT_AIM_PITCH;
+    this.aimPower = DEFAULT_AIM_POWER;
+    this.chargePower = DEFAULT_AIM_POWER;
     this.chargeDir = 1;
     this.isCharging = false;
-    this.moveStamina = MOVE_STAMINA_MAX;
     this.shotFiredThisTurn = false;
 
     // Active projectiles & delayed bursts
@@ -677,6 +764,10 @@ export class PandaRamenEngine {
     const next = {
       moveX: typeof input.moveX === 'number' ? clamp(input.moveX, -1, 1) : prev.moveX,
       moveZ: typeof input.moveZ === 'number' ? clamp(input.moveZ, -1, 1) : prev.moveZ,
+      stickX: typeof input.stickX === 'number' ? clamp(input.stickX, -1, 1) : prev.stickX,
+      stickY: typeof input.stickY === 'number' ? clamp(input.stickY, -1, 1) : prev.stickY,
+      dpadX: typeof input.dpadX === 'number' ? clamp(Math.round(input.dpadX), -1, 1) : prev.dpadX,
+      dpadY: typeof input.dpadY === 'number' ? clamp(Math.round(input.dpadY), -1, 1) : prev.dpadY,
       jump: typeof input.jump === 'boolean' ? input.jump : prev.jump,
       shoot: typeof input.shoot === 'boolean' ? input.shoot : prev.shoot,
       weapon: prev.weapon,
@@ -684,7 +775,7 @@ export class PandaRamenEngine {
       arcCycle: prev.arcCycle,
     };
 
-    // One-shot weapon selection or arc change from the lower-right wheel / HUD
+    // One-shot weapon selection, panda swap, or quick pitch preset from the HUD / wheel
     if (typeof input.weapon === 'string' && WEAPON_BY_ID[input.weapon]) {
       next.weapon = input.weapon;
       if (playerId === this.activeControllerId && this.phase === 'aim' && !this.isCharging) {
@@ -694,15 +785,22 @@ export class PandaRamenEngine {
         }
       }
     }
+    if (input.nextPanda) {
+      if (playerId === this.activeControllerId && this.phase === 'aim' && !this.isCharging) {
+        this._switchActivePanda();
+      }
+    }
     if (typeof input.arcIndex === 'number' && input.arcIndex >= 0 && input.arcIndex < ARC_ANGLES.length) {
       if (playerId === this.activeControllerId && this.phase === 'aim') {
         this.arcIndex = Math.floor(input.arcIndex);
+        this.aimPitch = ARC_ANGLES[this.arcIndex].rad;
       }
     }
     if (input.arcCycle) {
       if (playerId === this.activeControllerId && this.phase === 'aim') {
         this.arcIndex = (this.arcIndex + 1) % ARC_ANGLES.length;
-        this.events.push({ type: 'arc_change', arcIndex: this.arcIndex });
+        this.aimPitch = ARC_ANGLES[this.arcIndex].rad;
+        this.events.push({ type: 'arc_change', arcIndex: this.arcIndex, aimPitch: this.aimPitch });
       }
     }
 
@@ -749,9 +847,9 @@ export class PandaRamenEngine {
     this.phase = 'aim';
     this.phaseTimer = 0;
     this.turnTimeLeft = TURN_DURATION;
-    this.moveStamina = MOVE_STAMINA_MAX;
     this.isCharging = false;
-    this.chargePower = 0;
+    this.aimPower = DEFAULT_AIM_POWER;
+    this.chargePower = DEFAULT_AIM_POWER;
     this.chargeDir = 1;
     this.shotFiredThisTurn = false;
     this.botPlan = null;
@@ -795,6 +893,7 @@ export class PandaRamenEngine {
     if (isFirstTurn) {
       this.selectedWeaponId = 'rocket-launcher';
       this.arcIndex = 1;
+      this.aimPitch = DEFAULT_AIM_PITCH;
       // Gently aim the clumsy Turn-1 panda toward an opposing panda across the board
       const opp = this._livingPandas(1)[2] || this._livingPandas(1)[0];
       if (opp) {
@@ -804,20 +903,9 @@ export class PandaRamenEngine {
       this.windZ = -0.18;
     } else {
       this._rollWind();
-      // Gently orient toward nearest enemy panda so player starts facing the action
-      const enemies = this._livingPandas(1 - team);
-      if (enemies.length > 0) {
-        let nearest = enemies[0];
-        let bestD = Infinity;
-        for (const e of enemies) {
-          const d = Math.hypot(e.x - chosen.x, e.z - chosen.z);
-          if (d < bestD) {
-            bestD = d;
-            nearest = e;
-          }
-        }
-        chosen.yaw = Math.atan2(nearest.x - chosen.x, nearest.z - chosen.z);
-      }
+      this.arcIndex = 1;
+      this.aimPitch = DEFAULT_AIM_PITCH;
+      this._faceNearestEnemy(chosen);
     }
 
     // Clear stale edge states for active controller
@@ -838,6 +926,58 @@ export class PandaRamenEngine {
       controllerName: controller ? controller.name : TEAMS[team].name,
       weapon: this.selectedWeaponId,
     });
+  }
+
+  _faceNearestEnemy(panda) {
+    const enemies = this._livingPandas(1 - panda.team);
+    if (enemies.length === 0) return;
+    let nearest = enemies[0];
+    let bestD = Infinity;
+    for (const e of enemies) {
+      const d = Math.hypot(e.x - panda.x, e.z - panda.z);
+      if (d < bestD) {
+        bestD = d;
+        nearest = e;
+      }
+    }
+    panda.yaw = Math.atan2(nearest.x - panda.x, nearest.z - panda.z);
+  }
+
+  /** Cycle to the next living panda on the active team before firing. */
+  _switchActivePanda() {
+    const living = this._livingPandas(this.activeTeam);
+    if (living.length <= 1) return false;
+    const curIdx = living.findIndex((p) => p.id === this.activePandaId);
+    const prev = curIdx >= 0 ? living[curIdx] : null;
+    const next = living[(curIdx + 1) % living.length];
+    if (!next || next === prev) return false;
+
+    if (prev && prev.state === 'active') {
+      prev.state = 'idle';
+      prev.expression = 'happy';
+    }
+    next.state = 'active';
+    next.expression = 'goofy';
+    this.activePandaId = next.id;
+    this._faceNearestEnemy(next);
+
+    // Keep round-robin cursor advancing from whichever panda actually shoots
+    const teamPandas = this.pandas.filter((p) => p.team === this.activeTeam);
+    const slotIdx = teamPandas.findIndex((p) => p.id === next.id);
+    if (slotIdx >= 0) {
+      this.teamTurnCursor[this.activeTeam] = (slotIdx + 1) % teamPandas.length;
+    }
+
+    this.events.push({
+      type: 'panda_switch',
+      team: this.activeTeam,
+      pandaId: next.id,
+      pandaName: next.name,
+      x: next.x,
+      y: next.y,
+      z: next.z,
+    });
+    return true;
   }
 
   _finishMatch(winningTeam) {
@@ -868,16 +1008,16 @@ export class PandaRamenEngine {
   }
 
   /** Computes the launch origin and velocity vector for a shot. */
-  getLaunchParams(panda, weaponId = this.selectedWeaponId, power = 0.65, arcIdx = this.arcIndex) {
+  getLaunchParams(panda, weaponId = this.selectedWeaponId, power = 0.65, pitchRad = this.aimPitch) {
     const weapon = WEAPON_BY_ID[weaponId] || WEAPONS[0];
-    const arc = ARC_ANGLES[clamp(arcIdx, 0, ARC_ANGLES.length - 1)];
+    const pitch = clamp(typeof pitchRad === 'number' ? pitchRad : DEFAULT_AIM_PITCH, MIN_AIM_PITCH, MAX_AIM_PITCH);
     const p = clamp(power, 0.25, 1.0);
     const speed = weapon.speed * (0.42 + 0.72 * p);
 
     const sinY = Math.sin(panda.yaw);
     const cosY = Math.cos(panda.yaw);
-    const cosP = Math.cos(arc.rad);
-    const sinP = Math.sin(arc.rad);
+    const cosP = Math.cos(pitch);
+    const sinP = Math.sin(pitch);
 
     const origin = {
       x: panda.x + sinY * 0.62,
@@ -895,20 +1035,17 @@ export class PandaRamenEngine {
     };
   }
 
-  _fireWeapon(panda, weaponId, power, arcIdx) {
+  _fireWeapon(panda, weaponId, power, pitchRad = this.aimPitch) {
     const weapon = WEAPON_BY_ID[weaponId] || WEAPONS[0];
     this.shotFiredThisTurn = true;
     this.isCharging = false;
     this.phase = 'firing';
     this.phaseTimer = 0;
-    panda.recoilTimer = 0.42;
+    // Playful visual recoil wobble without sliding the stationary panda off its perch!
+    panda.recoilTimer = 0.44;
 
-    // Playful tiny clumsy recoil hop on the shooter (not enough to fall off ledge!)
     const sinY = Math.sin(panda.yaw);
     const cosY = Math.cos(panda.yaw);
-    panda.vx -= sinY * 0.85;
-    panda.vz -= cosY * 0.85;
-    panda.vy = Math.max(panda.vy, 1.4);
 
     if (weapon.burstCount > 1) {
       // Fan volley (e.g. 3 whistling bamboo rockets!)
@@ -920,12 +1057,12 @@ export class PandaRamenEngine {
           team: panda.team,
           weaponId: weapon.id,
           power,
-          arcIdx,
+          pitchRad,
           yawOff,
         });
       });
     } else {
-      this._spawnProjectile(panda, weapon.id, power, arcIdx, 0);
+      this._spawnProjectile(panda, weapon.id, power, pitchRad, 0);
     }
 
     this.events.push({
@@ -941,10 +1078,10 @@ export class PandaRamenEngine {
     });
   }
 
-  _spawnProjectile(panda, weaponId, power, arcIdx, yawOffset = 0, override = null) {
+  _spawnProjectile(panda, weaponId, power, pitchRad, yawOffset = 0, override = null) {
     const savedYaw = panda.yaw;
     panda.yaw = savedYaw + yawOffset;
-    const launch = this.getLaunchParams(panda, weaponId, power, arcIdx);
+    const launch = this.getLaunchParams(panda, weaponId, power, pitchRad);
     panda.yaw = savedYaw;
 
     const proj = {
@@ -984,6 +1121,15 @@ export class PandaRamenEngine {
       radius,
       team: proj.ownerTeam,
     });
+
+    if (isInRiver(impactX, impactZ) && impactY <= WATER_LEVEL + 0.45) {
+      this.events.push({
+        type: 'water_splash',
+        x: Number(impactX.toFixed(3)),
+        y: WATER_LEVEL + 0.08,
+        z: Number(impactZ.toFixed(3)),
+      });
+    }
 
     for (const pd of this.pandas) {
       if (!pd.hasRamen) continue;
@@ -1092,29 +1238,33 @@ export class PandaRamenEngine {
       weaponId = pool[Math.floor(this.rng() * pool.length)];
     }
 
-    const weapon = WEAPON_BY_ID[weaponId];
-    const arcIdx = dy > 0.65 || weaponId === 'dumpling-drop' || weaponId === 'ramen-bomb'
-      ? (this.rng() < 0.55 ? 2 : 1)
-      : (weaponId === 'rocket-launcher' && dy < 0.3 ? 0 : 1);
-
-    // Search power in [0.25..1.0] via fast ballistic simulation so bots clear peaks cleanly!
+    // Search power & arc presets via fast ballistic simulation so bots clear towering peaks cleanly!
     const baseYaw = Math.atan2(target.x - panda.x, target.z - panda.z);
     let bestPow = 0.65;
     let bestYaw = baseYaw;
+    let bestArcIdx = 1;
     let bestErr = Infinity;
 
-    const testYaws = [baseYaw - 0.08, baseYaw, baseYaw + 0.08];
-    for (const ty of testYaws) {
-      for (let p = 0.28; p <= 1.0; p += 0.06) {
-        const sim = this._simulateShotLanding(panda, weaponId, p, arcIdx, ty, profile.windComp);
-        const err = Math.hypot(sim.x - target.x, (sim.y - target.y) * 0.8, sim.z - target.z);
-        if (err < bestErr) {
-          bestErr = err;
-          bestPow = p;
-          bestYaw = ty;
+    const testArcs = dy > 0.65 || weaponId === 'dumpling-drop' || weaponId === 'ramen-bomb' ? [1, 2] : [0, 1, 2];
+    const testYaws = [baseYaw - 0.07, baseYaw, baseYaw + 0.07];
+    for (const aIdx of testArcs) {
+      const pRad = ARC_ANGLES[aIdx].rad;
+      for (const ty of testYaws) {
+        for (let p = 0.28; p <= 1.0; p += 0.06) {
+          const sim = this._simulateShotLanding(panda, weaponId, p, pRad, ty, profile.windComp);
+          const err = Math.hypot(sim.x - target.x, (sim.y - target.y) * 0.85, sim.z - target.z);
+          if (err < bestErr) {
+            bestErr = err;
+            bestPow = p;
+            bestYaw = ty;
+            bestArcIdx = aIdx;
+          }
         }
       }
     }
+
+    const arcIdx = bestArcIdx;
+    const pitchRad = ARC_ANGLES[arcIdx].rad;
 
     // Apply difficulty spread
     const aimYaw = normalizeAngle(bestYaw + (this.rng() * 2 - 1) * profile.aimErrorRad);
@@ -1123,6 +1273,7 @@ export class PandaRamenEngine {
     return {
       weaponId,
       arcIdx,
+      pitchRad,
       aimYaw,
       aimPower,
       thinkTimer: profile.thinkDelay,
@@ -1132,10 +1283,10 @@ export class PandaRamenEngine {
     };
   }
 
-  _simulateShotLanding(panda, weaponId, power, arcIdx, yaw, windComp = 1) {
+  _simulateShotLanding(panda, weaponId, power, pitchRad, yaw, windComp = 1) {
     const savedYaw = panda.yaw;
     panda.yaw = yaw;
-    const launch = this.getLaunchParams(panda, weaponId, power, arcIdx);
+    const launch = this.getLaunchParams(panda, weaponId, power, pitchRad);
     panda.yaw = savedYaw;
 
     let x = launch.origin.x;
@@ -1145,7 +1296,7 @@ export class PandaRamenEngine {
     let vy = launch.vy;
     let vz = launch.vz;
     const dt = 0.04;
-    for (let step = 0; step < 95; step++) {
+    for (let step = 0; step < 135; step++) {
       vx += this.windX * windComp * 0.45 * dt;
       vz += this.windZ * windComp * 0.45 * dt;
       vy -= launch.gravity * dt;
@@ -1170,6 +1321,7 @@ export class PandaRamenEngine {
     }
 
     this.turnTimeLeft = Math.max(0, this.turnTimeLeft - dt);
+    panda.speed = 0;
 
     // Bot AI control
     if (controller?.isBot) {
@@ -1182,106 +1334,74 @@ export class PandaRamenEngine {
         }
       }
       if (this.botPlan) {
-        // Smoothly rotate panda toward bot's planned aim yaw
+        // Smoothly rotate panda & pitch launcher toward bot's planned shot
         const diff = normalizeAngle(this.botPlan.aimYaw - panda.yaw);
         panda.yaw = normalizeAngle(panda.yaw + diff * Math.min(1, dt * 6.5));
+        this.aimPitch += (this.botPlan.pitchRad - this.aimPitch) * Math.min(1, dt * 6.5);
 
         if (this.botPlan.stage === 'think') {
           this.botPlan.thinkTimer -= dt;
           if (this.botPlan.thinkTimer <= 0) {
             this.botPlan.stage = 'charge';
             this.isCharging = true;
-            this.chargePower = 0.25;
           }
         } else if (this.botPlan.stage === 'charge') {
           this.botPlan.chargeTimer += dt;
           const t = clamp(this.botPlan.chargeTimer / this.botPlan.chargeDuration, 0, 1);
-          this.chargePower = 0.25 + (this.botPlan.aimPower - 0.25) * t;
+          this.aimPower = DEFAULT_AIM_POWER + (this.botPlan.aimPower - DEFAULT_AIM_POWER) * t;
+          this.chargePower = this.aimPower;
           if (t >= 1) {
             this.botPlan.stage = 'done';
-            this._fireWeapon(panda, this.selectedWeaponId, this.botPlan.aimPower, this.arcIndex);
+            this._fireWeapon(panda, this.selectedWeaponId, this.botPlan.aimPower, this.botPlan.pitchRad);
           }
         }
       }
       return;
     }
 
-    // Human player control
+    // Human player control — precision 4-way D-Pad aiming!
+    // Left / Right adjusts direction (yaw) independently.
+    // Up / Down adjusts distance (aimPower) independently.
     const inp = this.inputs.get(this.activeControllerId) || blankInput();
     const wasShoot = Boolean(this.prevShoot.get(this.activeControllerId));
     const wasJump = Boolean(this.prevJump.get(this.activeControllerId));
     this.prevShoot.set(this.activeControllerId, Boolean(inp.shoot));
     this.prevJump.set(this.activeControllerId, Boolean(inp.jump));
 
-    const stickMag = Math.hypot(inp.moveX, inp.moveZ);
-    if (stickMag > 0.12) {
-      const desiredYaw = Math.atan2(inp.moveX, inp.moveZ);
-      const diff = normalizeAngle(desiredYaw - panda.yaw);
-      panda.yaw = normalizeAngle(panda.yaw + diff * Math.min(1, dt * 10.5));
-
-      // Waddle when stick pushed past 0.35 and not charging a shot
-      if (!this.isCharging && stickMag > 0.35 && this.moveStamina > 0) {
-        const moveSpeed = 2.45 * clamp((stickMag - 0.25) / 0.75, 0.2, 1.0);
-        const nx = clamp(panda.x + Math.sin(panda.yaw) * moveSpeed * dt, -HALF_W + 0.55, HALF_W - 0.55);
-        const nz = clamp(panda.z + Math.cos(panda.yaw) * moveSpeed * dt, -HALF_D + 0.55, HALF_D - 0.55);
-        const curGround = getSurfaceHeight(panda.x, panda.z, panda.y + 0.25);
-        const nextGround = getSurfaceHeight(nx, nz, panda.y + 0.25);
-
-        // Soft cliff-guard & steep-wall guard while walking on foot (hop to climb or jump off!)
-        const onGround = panda.y <= curGround + 0.08;
-        const slopeOk = (nextGround - panda.y <= 0.42) && (!onGround || (panda.y - nextGround <= 0.55));
-        if (slopeOk) {
-          panda.x = nx;
-          panda.z = nz;
-          panda.speed = moveSpeed;
-          panda.animPhase += dt * moveSpeed * 3.8;
-          this.moveStamina = Math.max(0, this.moveStamina - dt);
-        } else {
-          panda.speed = 0;
-        }
-      } else {
-        panda.speed = 0;
+    let dx = inp.dpadX || 0;
+    let dy = inp.dpadY || 0;
+    // Cardinal fallback for keyboard WASD / Arrow keys routed through TouchControls
+    if (dx === 0 && dy === 0) {
+      const sx = inp.stickX !== null ? inp.stickX : inp.moveX;
+      const sy = inp.stickY !== null ? inp.stickY : -inp.moveZ;
+      if (Math.abs(sx) > 0.35 || Math.abs(sy) > 0.35) {
+        if (Math.abs(sx) >= Math.abs(sy)) dx = sx > 0 ? 1 : -1;
+        else dy = sy > 0 ? 1 : -1;
       }
-    } else {
-      panda.speed = 0;
     }
 
-    // Playful Panda Hop (allows climbing ledges & wooden zoo decks!)
-    const ground = getSurfaceHeight(panda.x, panda.z, panda.y + 0.2);
-    if (inp.jump && !wasJump && !this.isCharging && panda.y <= ground + 0.1) {
-      panda.vy = 5.9;
-      if (stickMag > 0.25) {
-        panda.vx += Math.sin(panda.yaw) * 2.2;
-        panda.vz += Math.cos(panda.yaw) * 2.2;
-      }
-      this.events.push({ type: 'hop', pandaId: panda.id, x: panda.x, y: panda.y, z: panda.z });
+    if (dx !== 0) {
+      panda.yaw = normalizeAngle(panda.yaw - dx * AIM_YAW_RATE * dt);
+    }
+    if (dy !== 0) {
+      this.aimPower = clamp(this.aimPower + dy * AIM_POWER_RATE * dt, MIN_AIM_POWER, MAX_AIM_POWER);
+      this.chargePower = this.aimPower;
     }
 
-    // Hold FIRE to charge power, Release to launch!
-    if (inp.shoot) {
-      if (!this.isCharging) {
-        this.isCharging = true;
-        this.chargePower = 0.26;
-        this.chargeDir = 1;
-      } else {
-        this.chargePower += this.chargeDir * dt * 0.92;
-        if (this.chargePower >= 1.0) {
-          this.chargePower = 1.0;
-          this.chargeDir = -1;
-        } else if (this.chargePower <= 0.25) {
-          this.chargePower = 0.25;
-          this.chargeDir = 1;
-        }
-      }
-    } else if (wasShoot && this.isCharging) {
-      this._fireWeapon(panda, this.selectedWeaponId, this.chargePower, this.arcIndex);
+    // Secondary button cycles to the next panda on your team before shooting
+    if (inp.jump && !wasJump) {
+      this._switchActivePanda();
+    }
+
+    // Tap FIRE to launch immediately along the exact dialed-in direction & distance!
+    if (inp.shoot && !wasShoot) {
+      this._fireWeapon(panda, this.selectedWeaponId, this.aimPower, this.aimPitch);
       return;
     }
 
     // Auto-fire if turn timer runs out
     if (this.turnTimeLeft <= 0) {
-      const power = this.isCharging ? this.chargePower : 0.62;
-      this._fireWeapon(panda, this.selectedWeaponId, power, this.arcIndex);
+      this._fireWeapon(panda, this.selectedWeaponId, this.aimPower, this.aimPitch);
     }
   }
 
@@ -1294,7 +1414,7 @@ export class PandaRamenEngine {
         this.pendingBursts.splice(i, 1);
         const pd = this.pandas.find((p) => p.id === b.pandaId);
         if (pd) {
-          this._spawnProjectile(pd, b.weaponId, b.power, b.arcIdx, b.yawOff);
+          this._spawnProjectile(pd, b.weaponId, b.power, b.pitchRad, b.yawOff);
         }
       }
     }
@@ -1327,7 +1447,7 @@ export class PandaRamenEngine {
         const owner = this.pandas.find((p) => p.id === pr.ownerPandaId) || this.pandas[0];
         for (let k = 0; k < weapon.clusterCount; k++) {
           const ang = (k / weapon.clusterCount) * Math.PI * 2 + 0.4;
-          this._spawnProjectile(owner, weapon.id, 0.5, this.arcIndex, 0, {
+          this._spawnProjectile(owner, weapon.id, 0.5, this.aimPitch, 0, {
             x: pr.x + Math.cos(ang) * 0.25,
             y: pr.y,
             z: pr.z + Math.sin(ang) * 0.25,
@@ -1627,9 +1747,12 @@ export class PandaRamenEngine {
       activeControllerIsBot: Boolean(activeCtrl?.isBot),
       selectedWeapon: this.selectedWeaponId,
       arcIndex: this.arcIndex,
+      aimPitch: Number(this.aimPitch.toFixed(4)),
+      aimDeg: Math.round((this.aimPitch * 180) / Math.PI),
+      aimPower: Number(this.aimPower.toFixed(3)),
+      aimDistancePct: Math.round(((this.aimPower - MIN_AIM_POWER) / (MAX_AIM_POWER - MIN_AIM_POWER)) * 100),
       isCharging: this.isCharging,
       chargePower: Number(this.chargePower.toFixed(3)),
-      moveStamina: Number((this.moveStamina / MOVE_STAMINA_MAX).toFixed(3)),
       windX: this.windX,
       windZ: this.windZ,
       botDifficulty: this.botDifficulty,

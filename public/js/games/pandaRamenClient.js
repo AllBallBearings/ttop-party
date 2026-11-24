@@ -5,6 +5,8 @@ import {
   BOARD_DEPTH,
   HALF_W,
   HALF_D,
+  WATER_LEVEL,
+  WATERFALL_CONFIG,
   GRAVITY,
   WEAPONS,
   WEAPON_BY_ID,
@@ -15,17 +17,21 @@ import {
   BAMBOO_GROVES,
   getTerrainHeight,
   getSurfaceHeight,
+  getRiverCenterX,
+  getRiverHalfWidth,
+  isInRiver,
 } from '../shared/pandaRamenEngine.js';
 
 /**
  * Panda Ramen Rumble — Stylized Illustrative 3D Renderer (Team Fortress 2 vibe)
  *
- * Renders a coffee-table-sized diorama with painterly grass, winding dirt
- * trails, sculpted mossy limestone peaks and overhangs, wooden zoo climbing
+ * Renders an expansive coffee-table diorama with painterly grass, winding dirt
+ * trails, towering sculpted mossy limestone peaks and overhangs, an animated
+ * cascading mountain waterfall feeding a meandering stream, wooden zoo climbing
  * decks/ladders/bridges/tables, cozy timber-framed dens, swaying bamboo
  * groves, 8 fat-and-happy pandas with steaming bowls of ramen, whimsical
  * 3D weapons (starting with the Rocket Launcher), Fall-Guys tumble VFX,
- * and the lower-right cartoon Weapon Wheel.
+ * a lower-left 4-way D-Pad, and the lower-right cartoon Weapon Wheel.
  */
 
 // ---------------------------------------------------------------------------
@@ -46,6 +52,74 @@ function makeCanvasTex(w, h, draw, { repeatX = 1, repeatY = 1 } = {}) {
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeatX, repeatY);
   }
+  return tex;
+}
+
+function createStylizedWaterTexture({ isWaterfall = false } = {}) {
+  const tex = makeCanvasTex(256, 256, (ctx, w, h) => {
+    // Rich TF2 stylized mountain stream turquoise gradient across channel width
+    const grad = ctx.createLinearGradient(0, 0, w, 0);
+    if (isWaterfall) {
+      grad.addColorStop(0.0, '#d8f6ff');
+      grad.addColorStop(0.14, '#54c7de');
+      grad.addColorStop(0.5, '#30a6c7');
+      grad.addColorStop(0.86, '#54c7de');
+      grad.addColorStop(1.0, '#d8f6ff');
+    } else {
+      grad.addColorStop(0.0, '#a9e6f0');
+      grad.addColorStop(0.16, '#3cb5cf');
+      grad.addColorStop(0.5, '#248eb0');
+      grad.addColorStop(0.84, '#3cb5cf');
+      grad.addColorStop(1.0, '#a9e6f0');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Painterly flowing current ribbons (seamlessly tiled vertically!)
+    let s = isWaterfall ? 2027 : 5153;
+    const rand = () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+
+    const streakCount = isWaterfall ? 48 : 34;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < streakCount; i++) {
+      const x = 14 + rand() * (w - 28);
+      const y = rand() * h;
+      const len = isWaterfall ? (32 + rand() * 58) : (22 + rand() * 44);
+      const isBright = rand() > (isWaterfall ? 0.35 : 0.55);
+      ctx.strokeStyle = isBright
+        ? (isWaterfall ? 'rgba(242, 252, 255, 0.72)' : 'rgba(224, 248, 255, 0.52)')
+        : 'rgba(18, 92, 120, 0.28)';
+      ctx.lineWidth = isWaterfall ? (3 + rand() * 5.5) : (2.5 + rand() * 4);
+
+      for (const offset of [0, -h, h]) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + offset);
+        ctx.bezierCurveTo(
+          x + (rand() - 0.5) * 10,
+          y + offset + len * 0.35,
+          x + (rand() - 0.5) * 10,
+          y + offset + len * 0.7,
+          x,
+          y + offset + len,
+        );
+        ctx.stroke();
+      }
+    }
+
+    // Soft bright shoreline / edge foam scallops
+    ctx.fillStyle = 'rgba(245, 253, 255, 0.45)';
+    for (let y = 0; y < h; y += 24) {
+      ctx.beginPath();
+      ctx.ellipse(8, y + 10, 8, 12, 0, 0, Math.PI * 2);
+      ctx.ellipse(w - 8, y + 18, 8, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }, { repeatX: 1, repeatY: isWaterfall ? 2 : 5 });
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
 
@@ -453,6 +527,10 @@ const sfx = {
   },
   sleep() {
     sound.playNotes([[523.25, 1.5], [440, 1.5], [392, 2.5]], { type: 'sine', step: 0.11, gain: 0.08 });
+  },
+  splash() {
+    sound.playNoise({ duration: 0.28, freq: 1850, q: 0.7, gain: 0.14, type: 'bandpass' });
+    sound._tone({ type: 'sine', f0: 360, f1: 150, duration: 0.18, gain: 0.1 });
   },
   win() {
     sound.playWin();
@@ -936,7 +1014,7 @@ function weaponIconSvg(id) {
   }
 }
 
-function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
+function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
   const wrap = document.createElement('div');
   wrap.className = 'panda-ui-layer';
 
@@ -963,14 +1041,79 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
   `;
   wrap.appendChild(topBanner);
 
-  // Charge meter bar (shown when charging FIRE)
-  const chargeWrap = document.createElement('div');
-  chargeWrap.className = 'panda-charge-wrap hidden';
-  chargeWrap.innerHTML = `
-    <div class="panda-charge-label">POWER</div>
-    <div class="panda-charge-track"><div id="pandaChargeFill" class="panda-charge-fill"></div></div>
+  // Lower-left Precision 4-Way D-Pad (Up/Down = Distance, Left/Right = Direction)
+  const dpadWrap = document.createElement('div');
+  dpadWrap.className = 'panda-dpad-wrap';
+  dpadWrap.setAttribute('aria-label', 'Aim and Distance D-Pad');
+  dpadWrap.innerHTML = `
+    <div class="panda-dpad">
+      <button type="button" class="dpad-btn dpad-up" data-dx="0" data-dy="1" aria-label="Farther">
+        <span class="dpad-arrow">▲</span>
+        <span class="dpad-tag">FAR</span>
+      </button>
+      <button type="button" class="dpad-btn dpad-left" data-dx="-1" data-dy="0" aria-label="Aim Left">
+        <span class="dpad-arrow">◀</span>
+      </button>
+      <div class="dpad-center" aria-hidden="true">
+        <span class="dpad-center-lbl">DIST</span>
+        <span id="pandaDistPct" class="dpad-center-val">50%</span>
+      </div>
+      <button type="button" class="dpad-btn dpad-right" data-dx="1" data-dy="0" aria-label="Aim Right">
+        <span class="dpad-arrow">▶</span>
+      </button>
+      <button type="button" class="dpad-btn dpad-down" data-dx="0" data-dy="-1" aria-label="Closer">
+        <span class="dpad-tag">NEAR</span>
+        <span class="dpad-arrow">▼</span>
+      </button>
+    </div>
+    <div class="control-caption">RANGE ▲▼ • AIM ◀▶</div>
   `;
-  wrap.appendChild(chargeWrap);
+  wrap.appendChild(dpadWrap);
+
+  const dpadButtons = [...dpadWrap.querySelectorAll('.dpad-btn')];
+  const activeDpadPointers = new Map(); // pointerId -> { dx, dy, btn }
+  const emitDpad = () => {
+    let dpadX = 0;
+    let dpadY = 0;
+    for (const v of activeDpadPointers.values()) {
+      if (v.dx !== 0) dpadX = v.dx;
+      if (v.dy !== 0) dpadY = v.dy;
+    }
+    onDpad({ dpadX, dpadY });
+  };
+
+  for (const btn of dpadButtons) {
+    const dx = Number(btn.dataset.dx);
+    const dy = Number(btn.dataset.dy);
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sound.unlock();
+      btn.setPointerCapture(e.pointerId);
+      btn.classList.add('pressed');
+      activeDpadPointers.set(e.pointerId, { dx, dy, btn });
+      emitDpad();
+    });
+    const release = (e) => {
+      if (!activeDpadPointers.has(e.pointerId)) return;
+      e.preventDefault();
+      activeDpadPointers.delete(e.pointerId);
+      const stillHeld = [...activeDpadPointers.values()].some((v) => v.btn === btn);
+      if (!stillHeld) btn.classList.remove('pressed');
+      emitDpad();
+    };
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+  }
+
+  const onBlur = () => {
+    if (activeDpadPointers.size > 0) {
+      activeDpadPointers.clear();
+      for (const b of dpadButtons) b.classList.remove('pressed');
+      onDpad({ dpadX: 0, dpadY: 0 });
+    }
+  };
+  window.addEventListener('blur', onBlur);
 
   // Lower-right Illustrated Cartoon Weapon Wheel!
   const wheelWrap = document.createElement('div');
@@ -1080,8 +1223,7 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
     turnLabelEl: topBanner.querySelector('#pandaTurnLabel'),
     timerEl: topBanner.querySelector('#pandaTimerText'),
     windEl: topBanner.querySelector('#pandaWindText'),
-    chargeWrap,
-    chargeFill: chargeWrap.querySelector('#pandaChargeFill'),
+    distPctEl: dpadWrap.querySelector('#pandaDistPct'),
     arcTopEl: wheelWrap.querySelector('#wheelArcTop'),
     arcDegEl: wheelWrap.querySelector('#wheelArcDeg'),
     setSelectedWeapon(weaponId) {
@@ -1090,6 +1232,7 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc }) {
       }
     },
     dispose() {
+      window.removeEventListener('blur', onBlur);
       wrap.remove();
     },
   };
@@ -1105,7 +1248,7 @@ export class PandaRamenClient {
     this.config = config;
     this.selfPlayerId = selfPlayerId;
     this.sendAction = context.sendAction || (() => {});
-    this.preferredPreviewDist = 16.2;
+    this.preferredPreviewDist = 23.0;
 
     this.group = new THREE.Group();
     this.boardRoot.add(this.group);
@@ -1118,21 +1261,26 @@ export class PandaRamenClient {
     this.popups = [];
     this.flyingBowls = [];
     this.windLeaves = [];
+    this.waterfallMist = [];
+    this.foamRings = [];
+    this.waterfallTex = null;
+    this.riverTex = null;
     this.aimDots = [];
     this.aimRing = null;
 
     this.controlLabels = {
-      jump: 'HOP',
+      jump: 'NEXT',
       shoot: 'FIRE',
-      jumpIcon: '🐾',
+      jumpIcon: '🐼',
       shootIcon: '🚀',
-      badge: 'HOLD + RELEASE',
+      badge: 'ROCKET LAUNCHER',
       armed: true,
     };
 
     this._initMaterials();
     this._buildLights();
     this._buildDioramaBoard();
+    this._buildWaterfallAndRiver();
     this._buildZooStructures();
     this._buildDens();
     this._buildBambooGroves();
@@ -1149,6 +1297,9 @@ export class PandaRamenClient {
         sfx.wheelClick();
         this.sendAction({ arcCycle: true });
       },
+      onDpad: ({ dpadX, dpadY }) => {
+        this.sendAction({ dpadX, dpadY });
+      },
     });
 
     this._onKeyDown = (e) => {
@@ -1161,6 +1312,10 @@ export class PandaRamenClient {
           this.ui.setSelectedWeapon(w.id);
           this.sendAction({ weapon: w.id });
         }
+      } else if (e.code === 'Tab') {
+        e.preventDefault();
+        sfx.wheelClick();
+        this.sendAction({ nextPanda: true });
       } else if (e.code === 'KeyQ' || e.code === 'KeyE' || e.code === 'KeyR') {
         sfx.wheelClick();
         this.sendAction({ arcCycle: true });
@@ -1175,6 +1330,8 @@ export class PandaRamenClient {
     const woodTex = createPainterlyWoodTexture('#8f5d32', '#523016', '#b77f4a');
     const woodLightTex = createPainterlyWoodTexture('#b88754', '#7a512a', '#d4a66e');
     const frameWoodTex = createPainterlyWoodTexture('#5c3c22', '#351f0f', '#785130');
+    this.waterfallTex = createStylizedWaterTexture({ isWaterfall: true });
+    this.riverTex = createStylizedWaterTexture({ isWaterfall: false });
 
     this.mats = {
       terrain: new THREE.MeshStandardMaterial({
@@ -1195,6 +1352,29 @@ export class PandaRamenClient {
         roughness: 0.9,
         metalness: 0.01,
         flatShading: true,
+      }),
+      waterfall: new THREE.MeshStandardMaterial({
+        map: this.waterfallTex,
+        color: 0xdff8ff,
+        roughness: 0.28,
+        metalness: 0.06,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide,
+      }),
+      river: new THREE.MeshStandardMaterial({
+        map: this.riverTex,
+        color: 0xd6f4ff,
+        roughness: 0.22,
+        metalness: 0.08,
+        transparent: true,
+        opacity: 0.88,
+      }),
+      waterFoam: new THREE.MeshBasicMaterial({
+        color: 0xf0fcff,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
       }),
       wood: new THREE.MeshStandardMaterial({
         map: woodTex,
@@ -1250,55 +1430,70 @@ export class PandaRamenClient {
   }
 
   _buildLights() {
-    // Warm sunlit TF2-style fill bounce so the meadow glows warmly!
-    const warmBounce = new THREE.PointLight(0xffdfb0, 0.9, 26, 1.2);
-    warmBounce.position.set(-4, 6.5, 5);
-    this.group.add(warmBounce);
+    // Warm sunlit TF2-style fill bounce + cool waterfall mist rim light!
+    const warmBounce = new THREE.PointLight(0xffdfb0, 1.15, 44, 1.1);
+    warmBounce.position.set(-6, 10.5, 8);
+    const coolWaterGlow = new THREE.PointLight(0x8be4f7, 0.55, 22, 1.3);
+    coolWaterGlow.position.set(WATERFALL_CONFIG.x, 3.2, WATERFALL_CONFIG.poolZ + 0.5);
+    this.group.add(warmBounce, coolWaterGlow);
   }
 
   _buildDioramaBoard() {
     // 1. Handcrafted carved walnut wood diorama tray sitting on the coffee table
     const baseTray = new THREE.Mesh(
-      new THREE.BoxGeometry(BOARD_WIDTH + 0.56, 0.56, BOARD_DEPTH + 0.56),
+      new THREE.BoxGeometry(BOARD_WIDTH + 0.68, 0.72, BOARD_DEPTH + 0.68),
       this.mats.frameWood,
     );
-    baseTray.position.y = -0.24;
+    baseTray.position.y = -0.34;
     baseTray.receiveShadow = true;
     baseTray.castShadow = true;
     this.group.add(baseTray);
 
-    // Subtle wooden lip trim along the 4 sides
-    const lipH = 0.22;
-    const lipT = 0.24;
-    const frontBack = new THREE.BoxGeometry(BOARD_WIDTH + 0.6, lipH, lipT);
-    const leftRight = new THREE.BoxGeometry(lipT, lipH, BOARD_DEPTH + 0.16);
-    for (const sz of [-1, 1]) {
-      const m = new THREE.Mesh(frontBack, this.mats.frameWood);
-      m.position.set(0, 0.04, sz * (HALF_D + 0.16));
-      m.receiveShadow = true;
-      this.group.add(m);
-    }
+    // Subtle wooden lip trim along the 4 sides (leaving a clean river outflow notch on front!)
+    const lipH = 0.24;
+    const lipT = 0.28;
+    const backLip = new THREE.Mesh(new THREE.BoxGeometry(BOARD_WIDTH + 0.7, lipH, lipT), this.mats.frameWood);
+    backLip.position.set(0, 0.04, -(HALF_D + 0.18));
+    backLip.receiveShadow = true;
+    this.group.add(backLip);
+
+    // Front rim split around the river outflow so the stream pours cleanly to the edge!
+    const exitX = getRiverCenterX(HALF_D);
+    const gapHalf = getRiverHalfWidth(HALF_D) + 0.28;
+    const leftFrontW = Math.max(0.5, (exitX - gapHalf) - (-HALF_W - 0.35));
+    const rightFrontW = Math.max(0.5, (HALF_W + 0.35) - (exitX + gapHalf));
+    const frontL = new THREE.Mesh(new THREE.BoxGeometry(leftFrontW, lipH, lipT), this.mats.frameWood);
+    frontL.position.set(-HALF_W - 0.35 + leftFrontW / 2, 0.04, HALF_D + 0.18);
+    frontL.receiveShadow = true;
+    const frontR = new THREE.Mesh(new THREE.BoxGeometry(rightFrontW, lipH, lipT), this.mats.frameWood);
+    frontR.position.set(exitX + gapHalf + rightFrontW / 2, 0.04, HALF_D + 0.18);
+    frontR.receiveShadow = true;
+    this.group.add(frontL, frontR);
+
+    const leftRight = new THREE.BoxGeometry(lipT, lipH, BOARD_DEPTH + 0.24);
     for (const sx of [-1, 1]) {
       const m = new THREE.Mesh(leftRight, this.mats.frameWood);
-      m.position.set(sx * (HALF_W + 0.16), 0.04, 0);
+      m.position.set(sx * (HALF_W + 0.18), 0.04, 0);
       m.receiveShadow = true;
       this.group.add(m);
     }
 
-    // 2. Sculpted Multi-Level Terrain Heightfield Mesh (76 x 52 grid)
-    const segX = 76;
-    const segZ = 52;
+    // 2. High-Res Sculpted Multi-Level Terrain Heightfield Mesh (104 x 72 grid)
+    const segX = 104;
+    const segZ = 72;
     const geo = new THREE.PlaneGeometry(BOARD_WIDTH, BOARD_DEPTH, segX, segZ);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
-    const cGrass = new THREE.Color('#7ca341');
-    const cGrassSun = new THREE.Color('#95ba4e');
-    const cGrassDeep = new THREE.Color('#5a7a2c');
+    const cGrass = new THREE.Color('#7da542');
+    const cGrassSun = new THREE.Color('#97bd4f');
+    const cGrassDeep = new THREE.Color('#5a7b2c');
     const cDirt = new THREE.Color('#c8a872');
-    const cRock = new THREE.Color('#8c887d');
-    const cRockDark = new THREE.Color('#66635b');
+    const cSand = new THREE.Color('#cfb786');
+    const cRiverBed = new THREE.Color('#3b7274');
+    const cRock = new THREE.Color('#969186');
+    const cRockDark = new THREE.Color('#68645c');
     const tmp = new THREE.Color();
 
     for (let i = 0; i < pos.count; i++) {
@@ -1307,29 +1502,35 @@ export class PandaRamenClient {
       const y = getTerrainHeight(x, z);
       pos.setY(i, y);
 
-      // Estimate local slope so steep cliffs become sculpted limestone rock
-      const eps = 0.22;
+      const eps = 0.24;
       const hx = (getTerrainHeight(x + eps, z) - getTerrainHeight(x - eps, z)) / (2 * eps);
       const hz = (getTerrainHeight(x, z + eps) - getTerrainHeight(x, z - eps)) / (2 * eps);
       const slope = Math.hypot(hx, hz);
 
-      // Winding valley dirt footpaths (matching image.png!)
-      const pathCurve1 = Math.abs(x - (-0.4 + Math.sin(z * 0.65) * 1.15));
-      const pathCurve2 = Math.abs(z - (0.35 + Math.cos(x * 0.55) * 0.85));
-      const onPath = y < 0.45 && (pathCurve1 < 0.72 || (x > -2.8 && x < 3.6 && pathCurve2 < 0.56));
+      const riverDist = z >= WATERFALL_CONFIG.poolZ - 1.5
+        ? Math.abs(x - getRiverCenterX(z)) - getRiverHalfWidth(z)
+        : 99;
 
-      if (slope > 0.68 || (y > 2.45 && slope > 0.45)) {
-        const rockMix = Math.min(1, (slope - 0.55) * 1.15);
-        tmp.copy(cRock).lerp(cRockDark, Math.min(1, slope * 0.28));
-        if (y > 3.2) tmp.lerp(cGrassDeep, 0.28); // mossy high peaks!
+      // Winding valley dirt footpaths crossing toward the wooden river bridge
+      const pathCurve = Math.abs(z - (0.35 + Math.sin(x * 0.35) * 1.15));
+      const onPath = y > 0.18 && y < 0.72 && pathCurve < 0.75 && Math.abs(x) < 6.8;
+
+      if (riverDist < 0.12 && y <= 0.16) {
+        tmp.copy(cRiverBed);
+      } else if (riverDist < 0.85 && y <= 0.42) {
+        const bankMix = Math.max(0, 1 - Math.max(0, riverDist) / 0.85);
+        tmp.copy(cGrass).lerp(cSand, bankMix * 0.85);
+      } else if (slope > 0.72 || (y > 4.2 && slope > 0.42)) {
+        const rockMix = Math.min(1, (slope - 0.56) * 1.15);
+        tmp.copy(cRock).lerp(cRockDark, Math.min(1, slope * 0.26));
+        if (y > 4.8) tmp.lerp(cGrassDeep, 0.22);
         if (rockMix < 1) tmp.lerp(cGrassDeep, 1 - rockMix);
       } else {
-        // Lush mossy sunlit grass variation
-        const sun = Math.sin(x * 0.55 + z * 0.35) * 0.5 + 0.5;
+        const sun = Math.sin(x * 0.42 + z * 0.28) * 0.5 + 0.5;
         tmp.copy(cGrass).lerp(sun > 0.5 ? cGrassSun : cGrassDeep, Math.abs(sun - 0.5) * 0.9);
         if (onPath) {
-          const blend = Math.max(0, 1 - Math.min(pathCurve1 / 0.72, pathCurve2 / 0.56));
-          tmp.lerp(cDirt, blend * 0.82);
+          const blend = Math.max(0, 1 - pathCurve / 0.75);
+          tmp.lerp(cDirt, blend * 0.78);
         }
       }
 
@@ -1346,15 +1547,14 @@ export class PandaRamenClient {
     terrainMesh.castShadow = true;
     this.group.add(terrainMesh);
 
-    // 3. Sculpted TF2-style Tapered Cliff Spires & Grounded Moss-Capped Boulders
+    // 3. Towering Sculpted TF2-style Limestone Mountain Spires & Stepped Crag Cliffs
     const addRockSpire = (x, z, rBot, rTop, totalH, rotY = 0, withMoss = true) => {
       const spireG = new THREE.Group();
-      spireG.position.set(x, 0.02, z);
+      spireG.position.set(x, -0.02, z);
       spireG.rotation.y = rotY;
 
-      // Grounded multi-faceted tapered limestone rock column rooted to y=0!
       const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(rTop, rBot, totalH, 7, 2),
+        new THREE.CylinderGeometry(rTop, rBot, totalH, 7, 3),
         this.mats.rock,
       );
       body.position.y = totalH * 0.5;
@@ -1364,8 +1564,8 @@ export class PandaRamenClient {
       spireG.add(body);
 
       if (withMoss) {
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.82, rTop * 1.04, 0.24, 7), this.mats.moss);
-        cap.position.y = totalH + 0.04;
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(rTop * 0.82, rTop * 1.05, 0.28, 7), this.mats.moss);
+        cap.position.y = totalH + 0.05;
         cap.scale.set(1.06, 1.0, 0.86);
         cap.receiveShadow = true;
         spireG.add(cap);
@@ -1376,18 +1576,17 @@ export class PandaRamenClient {
     const addBoulder = (x, z, sx, sy, sz, rotY = 0, withMoss = false) => {
       const baseY = getTerrainHeight(x, z);
       const bG = new THREE.Group();
-      // Sink firmly into ground so it never looks like it's floating!
       bG.position.set(x, baseY - sy * 0.16, z);
       bG.rotation.y = rotY;
-      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55, 0), this.mats.rock);
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.58, 0), this.mats.rock);
       rock.scale.set(sx, sy, sz);
       rock.position.y = sy * 0.35;
       rock.castShadow = true;
       rock.receiveShadow = true;
       bG.add(rock);
       if (withMoss) {
-        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.45, 7, 5), this.mats.moss);
-        cap.scale.set(sx * 0.92, sy * 0.25, sz * 0.9);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.47, 7, 5), this.mats.moss);
+        cap.scale.set(sx * 0.92, sy * 0.24, sz * 0.9);
         cap.position.y = sy * 0.72;
         cap.receiveShadow = true;
         bG.add(cap);
@@ -1395,37 +1594,231 @@ export class PandaRamenClient {
       this.group.add(bG);
     };
 
-    // Sculpted cliff spires framing NW peak, NE mound, and East overhang (anchored to base!)
-    addRockSpire(-6.25, -3.55, 1.55, 0.58, 4.35, 0.3, true);
-    addRockSpire(-5.15, -3.65, 1.15, 0.52, 2.85, -0.45, true);
-    addRockSpire(-6.65, -2.0, 1.15, 0.58, 2.55, 0.55, true);
-    addRockSpire(6.68, -1.75, 1.25, 0.45, 3.65, -0.25, true);
+    // Towering mountain spires framing the waterfall canyon, NE summit, and East pinnacle!
+    addRockSpire(-8.95, -5.45, 2.25, 0.72, 7.45, 0.3, true);
+    addRockSpire(-6.65, -5.85, 1.85, 0.68, 5.95, -0.45, true);
+    addRockSpire(-9.85, -3.15, 1.65, 0.72, 4.65, 0.55, true);
+    // Dramatic twin canyon walls flanking the waterfall chute!
+    addRockSpire(-5.25, -6.55, 1.55, 0.62, 5.65, 0.22, true);
+    addRockSpire(-1.45, -6.45, 1.55, 0.58, 5.35, -0.35, true);
+    // Towering NE mountain peak behind Dumpling!
+    addRockSpire(4.65, -6.05, 1.85, 0.62, 6.05, 0.42, true);
+    addRockSpire(2.35, -5.65, 1.4, 0.68, 4.35, -0.2, true);
+    // Soaring Far-East pinnacle behind Matcha!
+    addRockSpire(9.75, -2.85, 1.85, 0.58, 6.45, -0.25, true);
+    addRockSpire(10.15, -0.65, 1.3, 0.62, 3.85, 0.48, true);
 
-    // Stepped rock cliff ledges around NW terrace, NE mound, and East overhang
-    addBoulder(-3.15, -0.52, 1.25, 1.05, 1.0, 0.2, true);
-    addBoulder(-5.55, 0.15, 1.35, 1.05, 1.1, -0.5, true);
-    addBoulder(1.05, -3.1, 1.3, 1.35, 1.15, 0.4, true);
-    addBoulder(3.55, -3.25, 1.35, 1.45, 1.15, -0.3, true);
-    addBoulder(6.35, 0.75, 1.15, 1.0, 1.1, 0.5, true);
+    // Stepped rock cliff buttresses around mid-tier ledges & river gorge
+    addBoulder(-5.2, -1.25, 1.5, 1.25, 1.2, 0.2, true);
+    addBoulder(-8.85, 0.25, 1.6, 1.35, 1.3, -0.5, true);
+    addBoulder(1.95, -4.15, 1.5, 1.65, 1.35, 0.4, true);
+    addBoulder(6.1, -4.35, 1.6, 1.85, 1.35, -0.3, true);
+    addBoulder(9.15, 1.45, 1.45, 1.25, 1.3, 0.5, true);
+    addBoulder(-4.65, -4.65, 1.15, 0.95, 1.05, 0.7, true);
+    addBoulder(-2.35, -4.85, 1.1, 0.9, 1.0, -0.6, true);
 
-    // Valley lounge rocks (matching where pandas lean back in image.png!)
+    // Valley lounge rocks
     for (const b of LOUNGE_BOULDERS) {
-      addBoulder(b.x, b.z, b.r * 1.45, b.h * 1.25, b.r * 1.35, b.x * 0.7, b.h > 0.68);
+      addBoulder(b.x, b.z, b.r * 1.45, b.h * 1.25, b.r * 1.35, b.x * 0.7, b.h > 0.75);
     }
 
-    // Stray decorative bamboo sticks lying on the meadow grass
+    // Stray decorative bamboo sticks lying on the sunny meadows
     const straySticks = [
-      [-0.4, 1.2, 0.4],
-      [2.2, 0.6, -0.8],
-      [2.5, 0.85, 0.3],
-      [-3.1, 1.9, -0.4],
-      [0.3, -1.1, 1.1],
+      [-1.8, 2.5, 0.4],
+      [3.4, 0.8, -0.8],
+      [3.9, 1.25, 0.3],
+      [-5.1, 2.8, -0.4],
+      [1.2, -1.8, 1.1],
+      [5.4, 4.2, -0.6],
     ];
     for (const [sx, sz, rot] of straySticks) {
-      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.036, 0.65, 6), this.mats.bambooLight);
+      if (isInRiver(sx, sz)) continue;
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.04, 0.75, 6), this.mats.bambooLight);
       stick.rotation.set(Math.PI / 2, 0, rot);
       stick.position.set(sx, getTerrainHeight(sx, sz) + 0.04, sz);
       this.group.add(stick);
+    }
+  }
+
+  /**
+   * Builds the animated mountain waterfall pouring in from the back cliff edge,
+   * cascading down two rocky tiers into a foaming turquoise plunge pool, and
+   * flowing all the way through the valley as a meandering stream!
+   */
+  _buildWaterfallAndRiver() {
+    const wf = WATERFALL_CONFIG;
+
+    // 1. Curved Cascading 2-Tier Waterfall Ribbon entering from back board edge (z = -HALF_D - 0.34 -> poolZ)
+    const wfProfile = [
+      { z: -HALF_D - 0.34, y: wf.topY + 0.16, w: wf.width * 0.92 },
+      { z: wf.topZ + 0.05, y: wf.topY + 0.14, w: wf.width * 0.96 },
+      { z: wf.lipZ - 0.18, y: wf.topY + 0.08, w: wf.width },
+      { z: wf.lipZ + 0.22, y: wf.topY - 0.32, w: wf.width * 1.03 },
+      { z: wf.lipZ + 0.65, y: wf.midY + 0.48, w: wf.width * 1.06 },
+      { z: wf.lipZ + 1.04, y: wf.midY, w: wf.width * 1.12 },
+      { z: wf.lipZ + 1.38, y: wf.midY - 0.56, w: wf.width * 1.16 },
+      { z: wf.poolZ - 0.12, y: WATER_LEVEL + 0.03, w: wf.width * 1.24 },
+    ];
+    const wfPos = [];
+    const wfUv = [];
+    const wfIdx = [];
+    let arcLen = 0;
+    for (let i = 0; i < wfProfile.length; i++) {
+      const pt = wfProfile[i];
+      if (i > 0) {
+        const prev = wfProfile[i - 1];
+        arcLen += Math.hypot(pt.z - prev.z, pt.y - prev.y);
+      }
+      const hw = pt.w * 0.5;
+      wfPos.push(wf.x - hw, pt.y, pt.z, wf.x + hw, pt.y, pt.z);
+      const v = arcLen / 3.4;
+      wfUv.push(0, v, 1, v);
+      if (i < wfProfile.length - 1) {
+        const a = i * 2;
+        wfIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    const wfGeo = new THREE.BufferGeometry();
+    wfGeo.setAttribute('position', new THREE.Float32BufferAttribute(wfPos, 3));
+    wfGeo.setAttribute('uv', new THREE.Float32BufferAttribute(wfUv, 2));
+    wfGeo.setIndex(wfIdx);
+    wfGeo.computeVertexNormals();
+
+    const waterfallMesh = new THREE.Mesh(wfGeo, this.mats.waterfall);
+    waterfallMesh.receiveShadow = true;
+    this.group.add(waterfallMesh);
+
+    // Sculpted upper canyon stone chute & mossy lip framing the waterfall inflow from the back edge!
+    const chuteBed = new THREE.Mesh(new THREE.BoxGeometry(wf.width + 1.2, 0.55, 1.55), this.mats.rock);
+    chuteBed.position.set(wf.x, wf.topY - 0.16, -HALF_D + 0.4);
+    chuteBed.castShadow = true;
+    chuteBed.receiveShadow = true;
+    this.group.add(chuteBed);
+
+    // Whitewater crest foam bar where the inflow tips over the cliff edge
+    const crestFoam = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, wf.width * 0.96, 8), this.mats.waterFoam);
+    crestFoam.rotation.z = Math.PI / 2;
+    crestFoam.position.set(wf.x, wf.topY + 0.04, wf.lipZ + 0.04);
+    this.group.add(crestFoam);
+
+    // Rooted canyon rock buttresses framing the waterfall walls (replacing any floating mid-rock!)
+    for (const side of [-1, 1]) {
+      const buttress = new THREE.Mesh(new THREE.DodecahedronGeometry(0.68, 0), this.mats.rock);
+      buttress.scale.set(1.05, 1.35, 1.15);
+      buttress.position.set(wf.x + side * (wf.width * 0.56 + 0.25), wf.midY + 0.15, wf.lipZ + 0.62);
+      buttress.castShadow = true;
+      buttress.receiveShadow = true;
+      this.group.add(buttress);
+    }
+
+    // 2. Meandering River Ribbon from Waterfall Plunge Pool to Front-Right Edge!
+    const riverSegs = 58;
+    const zStart = wf.poolZ - 0.85;
+    const zEnd = HALF_D + 0.34;
+    const rPos = [];
+    const rUv = [];
+    const rIdx = [];
+    let riverLen = 0;
+    let prevCx = getRiverCenterX(zStart);
+    let prevZ = zStart;
+
+    for (let i = 0; i <= riverSegs; i++) {
+      const t = i / riverSegs;
+      const z = zStart + (zEnd - zStart) * t;
+      const cx = getRiverCenterX(Math.min(HALF_D, z));
+      const hw = getRiverHalfWidth(Math.min(HALF_D, z)) * 1.1;
+      if (i > 0) riverLen += Math.hypot(cx - prevCx, z - prevZ);
+      prevCx = cx;
+      prevZ = z;
+
+      // Tangent perpendicular (smoothly straightened flush at the front edge notch!)
+      const eps = 0.12;
+      const dxdz = (getRiverCenterX(Math.min(HALF_D, z + eps)) - getRiverCenterX(Math.max(zStart, z - eps))) / (2 * eps);
+      const len = Math.hypot(1, dxdz) || 1;
+      const edgeFlatten = t > 0.88 ? Math.min(1, (t - 0.88) / 0.12) : 0;
+      const nx = (1 / len) * (1 - edgeFlatten) + 1 * edgeFlatten;
+      const nz = (-dxdz / len) * (1 - edgeFlatten);
+      // Slight downward lip at the very outer edge of the front walnut frame
+      const spillDrop = t > 0.96 ? ((t - 0.96) / 0.04) * 0.12 : 0;
+
+      rPos.push(cx - nx * hw, WATER_LEVEL - spillDrop, z - nz * hw);
+      rPos.push(cx + nx * hw, WATER_LEVEL - spillDrop, z + nz * hw);
+      const v = riverLen / 3.2;
+      rUv.push(0, v, 1, v);
+
+      if (i < riverSegs) {
+        const a = i * 2;
+        rIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    const rGeo = new THREE.BufferGeometry();
+    rGeo.setAttribute('position', new THREE.Float32BufferAttribute(rPos, 3));
+    rGeo.setAttribute('uv', new THREE.Float32BufferAttribute(rUv, 2));
+    rGeo.setIndex(rIdx);
+    rGeo.computeVertexNormals();
+
+    const riverMesh = new THREE.Mesh(rGeo, this.mats.river);
+    riverMesh.receiveShadow = true;
+    this.group.add(riverMesh);
+
+    // Mossy riverbank rocks cleanly framing the front walnut outflow notch
+    const exitX = getRiverCenterX(HALF_D);
+    const exitHw = getRiverHalfWidth(HALF_D);
+    for (const side of [-1, 1]) {
+      const bankRock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), this.mats.rock);
+      bankRock.scale.set(1.15, 0.72, 1.05);
+      bankRock.position.set(exitX + side * (exitHw + 0.34), 0.14, HALF_D - 0.12);
+      bankRock.castShadow = true;
+      bankRock.receiveShadow = true;
+      this.group.add(bankRock);
+    }
+
+    // 3. Foaming Plunge Pool Rings & Rising Waterfall Mist Puffs
+    for (let r = 0; r < 3; r++) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.45 + r * 0.25, 0.72 + r * 0.28, 22),
+        this.mats.waterFoam.clone(),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(wf.x, WATER_LEVEL + 0.03, wf.poolZ + 0.05);
+      this.group.add(ring);
+      this.foamRings.push({ mesh: ring, phase: r * 0.33 });
+    }
+
+    for (let m = 0; m < 14; m++) {
+      const puff = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18 + (m % 3) * 0.07, 8, 6),
+        this.mats.waterFoam.clone(),
+      );
+      this.group.add(puff);
+      this.waterfallMist.push({
+        mesh: puff,
+        phase: m / 14,
+        ox: (Math.sin(m * 2.1) * 0.85),
+        oz: (Math.cos(m * 1.7) * 0.45),
+      });
+    }
+
+    // 4. Smooth River Stepping Stones & Bank Pebbles along the Stream!
+    const stoneZs = [-3.1, -1.6, 2.2, 4.1, 6.2];
+    for (let idx = 0; idx < stoneZs.length; idx++) {
+      const sz = stoneZs[idx];
+      const cx = getRiverCenterX(sz);
+      const hw = getRiverHalfWidth(sz);
+      const side = idx % 2 === 0 ? -1 : 1;
+      const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 0), this.mats.rock);
+      stone.scale.set(1.25, 0.55, 1.05);
+      stone.position.set(cx + side * hw * 0.62, WATER_LEVEL + 0.02, sz);
+      stone.rotation.y = idx * 1.1;
+      stone.castShadow = true;
+      stone.receiveShadow = true;
+      this.group.add(stone);
+
+      // Tiny bright foam ring around each river boulder
+      const wake = new THREE.Mesh(new THREE.RingGeometry(0.34, 0.46, 14), this.mats.waterFoam);
+      wake.rotation.x = -Math.PI / 2;
+      wake.position.set(stone.position.x, WATER_LEVEL + 0.02, stone.position.z);
+      this.group.add(wake);
     }
   }
 
@@ -1435,13 +1828,53 @@ export class PandaRamenClient {
       g.position.set(s.x, 0, s.z);
       g.rotation.y = s.rotY;
 
-      const baseY = getTerrainHeight(s.x, s.z) - 0.15;
-      const h = Math.max(0.45, s.topY - baseY);
+      const baseY = Math.max(WATER_LEVEL - 0.15, getTerrainHeight(s.x, s.z) - 0.15);
+      const h = Math.max(0.55, s.topY - baseY);
+
+      if (s.arched) {
+        // Charming arched wooden footbridge spanning right over the flowing river!
+        const plankCount = 11;
+        const span = s.halfW * 2;
+        const plankW = span / plankCount - 0.03;
+        const plankGeo = new THREE.BoxGeometry(plankW, 0.08, s.halfD * 2 + 0.08);
+        for (let i = 0; i < plankCount; i++) {
+          const u = (i + 0.5) / plankCount; // 0..1
+          const px = -s.halfW + u * span;
+          const arch = Math.sin(u * Math.PI) * 0.42;
+          const slope = Math.cos(u * Math.PI) * 0.36;
+          const plank = new THREE.Mesh(plankGeo, i % 2 === 0 ? this.mats.woodLight : this.mats.wood);
+          plank.position.set(px, s.topY - 0.28 + arch, 0);
+          plank.rotation.z = slope;
+          plank.castShadow = true;
+          plank.receiveShadow = true;
+          g.add(plank);
+        }
+        // Sturdy riverbank posts & rope/wood side handrails
+        const postGeo = new THREE.CylinderGeometry(0.065, 0.075, 1.15, 8);
+        for (const px of [-s.halfW + 0.18, 0, s.halfW - 0.18]) {
+          const archBoost = px === 0 ? 0.38 : 0;
+          for (const pz of [-s.halfD - 0.02, s.halfD + 0.02]) {
+            const post = new THREE.Mesh(postGeo, this.mats.wood);
+            post.position.set(px, s.topY - 0.25 + archBoost + 0.32, pz);
+            post.castShadow = true;
+            g.add(post);
+          }
+        }
+        const railGeo = new THREE.BoxGeometry(s.halfW * 2.02, 0.07, 0.07);
+        for (const pz of [-s.halfD - 0.02, s.halfD + 0.02]) {
+          const rail = new THREE.Mesh(railGeo, this.mats.woodLight);
+          rail.position.set(0, s.topY + 0.45, pz);
+          rail.castShadow = true;
+          g.add(rail);
+        }
+        this.group.add(g);
+        continue;
+      }
 
       // 4 sturdy cedar support posts
-      const postGeo = new THREE.CylinderGeometry(0.07, 0.08, h + 0.22, 8);
-      for (const px of [-s.halfW + 0.12, s.halfW - 0.12]) {
-        for (const pz of [-s.halfD + 0.1, s.halfD - 0.1]) {
+      const postGeo = new THREE.CylinderGeometry(0.08, 0.09, h + 0.28, 8);
+      for (const px of [-s.halfW + 0.14, s.halfW - 0.14]) {
+        for (const pz of [-s.halfD + 0.12, s.halfD - 0.12]) {
           const post = new THREE.Mesh(postGeo, this.mats.wood);
           post.position.set(px, baseY + h / 2 + 0.06, pz);
           post.castShadow = true;
@@ -1451,18 +1884,18 @@ export class PandaRamenClient {
       }
 
       // Cross support rails under deck
-      const railGeo = new THREE.BoxGeometry(s.halfW * 2, 0.09, 0.09);
-      for (const pz of [-s.halfD + 0.1, s.halfD - 0.1]) {
+      const railGeo = new THREE.BoxGeometry(s.halfW * 2, 0.1, 0.1);
+      for (const pz of [-s.halfD + 0.12, s.halfD - 0.12]) {
         const rail = new THREE.Mesh(railGeo, this.mats.wood);
-        rail.position.set(0, s.topY - 0.09, pz);
+        rail.position.set(0, s.topY - 0.1, pz);
         rail.castShadow = true;
         g.add(rail);
       }
 
       // Individual rustic wooden deck planks with neat visual gaps
-      const plankCount = Math.max(4, Math.round((s.halfW * 2) / 0.25));
+      const plankCount = Math.max(4, Math.round((s.halfW * 2) / 0.28));
       const plankW = (s.halfW * 2) / plankCount - 0.03;
-      const plankGeo = new THREE.BoxGeometry(plankW, 0.075, s.halfD * 2 + 0.08);
+      const plankGeo = new THREE.BoxGeometry(plankW, 0.08, s.halfD * 2 + 0.1);
       for (let i = 0; i < plankCount; i++) {
         const px = -s.halfW + (i + 0.5) * ((s.halfW * 2) / plankCount);
         const plank = new THREE.Mesh(plankGeo, i % 2 === 0 ? this.mats.woodLight : this.mats.wood);
@@ -1472,38 +1905,36 @@ export class PandaRamenClient {
         g.add(plank);
       }
 
-      // Rustic wooden ladder leading up to the two-tier zoo climbing deck!
+      // Rustic wooden ladder leading up to the two-tier zoo climbing fort!
       if (s.hasLadder) {
         const ladder = new THREE.Group();
-        ladder.position.set(0.15, baseY + 0.1, s.halfD + 0.32);
+        ladder.position.set(0.18, baseY + 0.1, s.halfD + 0.42);
         ladder.rotation.x = -0.44;
-        const ladLen = h * 1.15;
-        const stileGeo = new THREE.CylinderGeometry(0.038, 0.042, ladLen, 6);
-        for (const sx of [-0.22, 0.22]) {
+        const ladLen = h * 1.18;
+        const stileGeo = new THREE.CylinderGeometry(0.042, 0.046, ladLen, 6);
+        for (const sx of [-0.26, 0.26]) {
           const stile = new THREE.Mesh(stileGeo, this.mats.wood);
           stile.position.set(sx, ladLen / 2, 0);
           stile.castShadow = true;
           ladder.add(stile);
         }
-        const rungGeo = new THREE.CylinderGeometry(0.028, 0.03, 0.48, 6);
-        for (let r = 0; r < 5; r++) {
+        const rungGeo = new THREE.CylinderGeometry(0.03, 0.032, 0.56, 6);
+        for (let r = 0; r < 6; r++) {
           const rung = new THREE.Mesh(rungGeo, this.mats.woodLight);
           rung.rotation.z = Math.PI / 2;
-          rung.position.set(0, 0.18 + r * (ladLen / 5.4), 0);
+          rung.position.set(0, 0.2 + r * (ladLen / 6.3), 0);
           ladder.add(rung);
         }
         g.add(ladder);
       }
 
-      // On the NW zoo feeding table, place a cute extra steaming ramen bowl (matching image.png!)
       if (s.type === 'table') {
-        // Little wooden seat backrest on one side like image.png
-        const back = new THREE.Mesh(new THREE.BoxGeometry(s.halfW * 1.6, 0.36, 0.07), this.mats.wood);
-        back.position.set(0, s.topY + 0.2, -s.halfD + 0.04);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(s.halfW * 1.6, 0.4, 0.08), this.mats.wood);
+        back.position.set(0, s.topY + 0.22, -s.halfD + 0.05);
         back.castShadow = true;
         g.add(back);
 
-        const tableBowl = createRamenBowl(this.mats, 0, 0.95);
+        const tableBowl = createRamenBowl(this.mats, 0, 1.0);
         tableBowl.position.set(0.06, s.topY + 0.01, 0.05);
         g.add(tableBowl);
       }
@@ -1520,49 +1951,44 @@ export class PandaRamenClient {
       den.position.set(x, y - 0.05, z);
       den.rotation.y = yaw;
 
-      // Sculpted limestone rock arch surrounding the recessed cave mouth
-      const rockBack = new THREE.Mesh(new THREE.DodecahedronGeometry(0.95, 0), this.mats.rock);
+      const rockBack = new THREE.Mesh(new THREE.DodecahedronGeometry(1.05, 0), this.mats.rock);
       rockBack.scale.set(1.25, 0.95, 0.85);
-      rockBack.position.set(0, 0.45, -0.45);
+      rockBack.position.set(0, 0.48, -0.45);
       rockBack.castShadow = true;
       rockBack.receiveShadow = true;
       den.add(rockBack);
 
-      const mossTop = new THREE.Mesh(new THREE.SphereGeometry(0.76, 8, 6), this.mats.moss);
+      const mossTop = new THREE.Mesh(new THREE.SphereGeometry(0.84, 8, 6), this.mats.moss);
       mossTop.scale.set(1.12, 0.22, 0.78);
-      mossTop.position.set(0, 0.92, -0.35);
+      mossTop.position.set(0, 0.98, -0.35);
       den.add(mossTop);
 
-      // Recessed dark cave doorway plane tucked cleanly behind the timber frame
-      const cave = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 0.78), this.mats.caveDark);
-      cave.position.set(0, 0.39, 0.06);
+      const cave = new THREE.Mesh(new THREE.PlaneGeometry(1.04, 0.84), this.mats.caveDark);
+      cave.position.set(0, 0.42, 0.08);
       den.add(cave);
 
-      // Chunky timber doorframe posts & top lintel beam (exact match to image.png!)
-      const postGeo = new THREE.BoxGeometry(0.16, 0.82, 0.16);
+      const postGeo = new THREE.BoxGeometry(0.17, 0.88, 0.17);
       for (const side of [-1, 1]) {
         const post = new THREE.Mesh(postGeo, this.mats.wood);
-        post.position.set(side * 0.48, 0.39, 0.14);
+        post.position.set(side * 0.52, 0.42, 0.15);
         post.rotation.z = side * 0.07;
         post.castShadow = true;
         den.add(post);
       }
-      const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.17, 0.22), this.mats.woodLight);
-      lintel.position.set(0, 0.81, 0.15);
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.18, 0.24), this.mats.woodLight);
+      lintel.position.set(0, 0.86, 0.16);
       lintel.castShadow = true;
       den.add(lintel);
 
       if (withSign) {
-        // Warm glowing paper team lantern hanging beside the den entrance
         const teamMat = teamIdx === 0 ? this.mats.teamRed : this.mats.teamBlue;
-        const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), teamMat);
+        const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), teamMat);
         lantern.scale.set(0.9, 1.15, 0.9);
-        lantern.position.set(0.62, 0.65, 0.25);
+        lantern.position.set(0.68, 0.68, 0.26);
         den.add(lantern);
 
-        // Spare cozy ramen bowl waiting at the den doorstep!
-        const spareBowl = createRamenBowl(this.mats, teamIdx, 0.86);
-        spareBowl.position.set(0.05, 0.01, 0.56);
+        const spareBowl = createRamenBowl(this.mats, teamIdx, 0.9);
+        spareBowl.position.set(0.05, 0.01, 0.58);
         den.add(spareBowl);
       }
 
@@ -1573,12 +1999,12 @@ export class PandaRamenClient {
     const blueDen = TEAMS[1].den;
     buildTimberDen(redDen.x, redDen.z, redDen.yaw, 0, true);
     buildTimberDen(blueDen.x, blueDen.z, blueDen.yaw, 1, true);
-    // Decorative overhang cave recess tucked low beneath Matcha's East cliff ledge
+    // Decorative cave recess tucked low beneath Matcha's towering East cliff ledge
     const eastCave = new THREE.Group();
-    eastCave.position.set(5.35, 0.06, 0.78);
-    eastCave.rotation.y = -0.62;
-    const eDark = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.76), this.mats.caveDark);
-    eDark.position.set(0, 0.4, 0);
+    eastCave.position.set(7.65, 0.25, 1.05);
+    eastCave.rotation.y = -0.65;
+    const eDark = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.9), this.mats.caveDark);
+    eDark.position.set(0, 0.45, 0);
     eastCave.add(eDark);
     this.group.add(eastCave);
   }
@@ -1600,6 +2026,7 @@ export class PandaRamenClient {
         const bx = grove.x + Math.cos(ang) * rad;
         const bz = grove.z + Math.sin(ang) * rad;
         const by = getTerrainHeight(bx, bz);
+        if (isInRiver(bx, bz) || by < WATER_LEVEL + 0.08) continue;
 
         const stalkGroup = new THREE.Group();
         stalkGroup.position.set(bx, by - 0.05, bz);
@@ -1654,14 +2081,14 @@ export class PandaRamenClient {
   }
 
   _buildAimTrajectory() {
-    const dotGeo = new THREE.SphereGeometry(0.085, 8, 6);
-    for (let i = 0; i < 18; i++) {
+    const dotGeo = new THREE.SphereGeometry(0.11, 8, 6);
+    for (let i = 0; i < 24; i++) {
       const m = new THREE.Mesh(
         dotGeo,
         new THREE.MeshBasicMaterial({
           color: i % 2 === 0 ? 0xfff8dc : 0xf7d13d,
           transparent: true,
-          opacity: 0.9 - i * 0.032,
+          opacity: Math.max(0.22, 0.92 - i * 0.028),
         }),
       );
       m.visible = false;
@@ -1670,12 +2097,12 @@ export class PandaRamenClient {
     }
 
     this.aimRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.32, 0.52, 24),
+      new THREE.RingGeometry(0.42, 0.68, 28),
       new THREE.MeshBasicMaterial({
         color: 0xf7e231,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.85,
         depthWrite: false,
       }),
     );
@@ -1845,11 +2272,14 @@ export class PandaRamenClient {
       }
     }
 
-    // Update lower-right Weapon Wheel & Turn HUD
+    // Update lower-right Weapon Wheel, D-Pad Distance readout & Turn HUD
     this.ui.setSelectedWeapon(state.selectedWeapon);
     const arc = ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1];
     this.ui.arcTopEl.textContent = arc.label;
     this.ui.arcDegEl.textContent = `${arc.deg}°`;
+    if (this.ui.distPctEl && typeof state.aimDistancePct === 'number') {
+      this.ui.distPctEl.textContent = `${state.aimDistancePct}%`;
+    }
 
     this.ui.redScoreEl.textContent = `🍜 ${state.ramenLeft[0]}`;
     this.ui.blueScoreEl.textContent = `${state.ramenLeft[1]} 🍜`;
@@ -1870,20 +2300,16 @@ export class PandaRamenClient {
     const windLabel = windMag < 0.45 ? 'Calm' : windMag < 1.1 ? 'Breeze' : 'Gusty';
     this.ui.windEl.textContent = `🍃 ${windLabel} ${windArrows[windIdx]}`;
 
-    this.ui.chargeWrap.classList.toggle('hidden', !state.isCharging);
-    if (state.isCharging) {
-      this.ui.chargeFill.style.width = `${Math.round(state.chargePower * 100)}%`;
-    }
-
-    // Touch action button labels
+    // Touch action button labels (secondary button swaps active panda, FIRE shoots immediately!)
     const activeWeapon = WEAPON_BY_ID[state.selectedWeapon] || WEAPONS[0];
+    const canSwap = (state.ramenLeft?.[state.activeTeam] || 0) > 1;
     this.controlLabels = isMyTurn && state.phase === 'aim'
       ? {
-          jump: 'HOP',
-          shoot: state.isCharging ? 'RELEASE!' : 'FIRE',
-          jumpIcon: '🐾',
+          jump: canSwap ? 'NEXT' : 'SOLO',
+          shoot: 'FIRE',
+          jumpIcon: '🐼',
           shootIcon: state.selectedWeapon === 'ramen-bomb' ? '🍜' : state.selectedWeapon === 'bouncing-tire' ? '🛞' : '🚀',
-          badge: state.isCharging ? `${Math.round(state.chargePower * 100)}%` : activeWeapon.displayName.toUpperCase(),
+          badge: activeWeapon.displayName.toUpperCase(),
           armed: true,
         }
       : {
@@ -1898,9 +2324,10 @@ export class PandaRamenClient {
     // Process one-shot game events for juicy Fall-Guys visuals & sounds
     for (const ev of state.events || []) {
       switch (ev.type) {
-        case 'hop':
+        case 'panda_switch':
           sfx.hop();
-          this._spawnCartoonBurst(ev.x, ev.y + 0.1, ev.z, [0xd9e8b2, 0xf3ede0], 6, 1.8, 0.08);
+          this._spawnCartoonBurst(ev.x, ev.y + 0.35, ev.z, [0xf7e231, 0xf3ede0], 7, 1.8, 0.08);
+          this._spawnPopup(ev.pandaName, TEAMS[ev.team].color, ev.x, ev.y + 1.15, ev.z);
           break;
         case 'fire':
           sfx.fire(ev.weapon);
@@ -1945,6 +2372,11 @@ export class PandaRamenClient {
         case 'panda_sleep':
           sfx.sleep();
           this._spawnPopup(`${ev.pandaName} NAP TIME 💤`, TEAMS[ev.team].color, ev.x, ev.y + 0.9, ev.z);
+          break;
+        case 'water_splash':
+          sfx.splash();
+          this._spawnCartoonBurst(ev.x, ev.y + 0.12, ev.z, [0x54c7de, 0x99ebff, 0xffffff], 14, 3.4, 0.14);
+          this._spawnPopup('SPLASH! 💦', '#0ea5e9', ev.x, ev.y + 0.95, ev.z);
           break;
         case 'round_over':
           sfx.win();
@@ -2065,22 +2497,23 @@ export class PandaRamenClient {
     }
 
     if (isActive) {
-      // Clumsy, nonchalant panda holding & aiming the whimsical weapon!
-      const arc = ARC_ANGLES[this.lastState?.arcIndex ?? 1] || ARC_ANGLES[1];
-      const recoil = pd.recoilTimer > 0 ? Math.sin((pd.recoilTimer / 0.42) * Math.PI) * 0.42 : 0;
-      const waddle = pd.speed > 0.15 ? Math.sin(ph * 1.4) : 0;
+      // Clumsy, nonchalant stationary panda holding & aiming the whimsical weapon!
+      const pitchRad = typeof this.lastState?.aimPitch === 'number'
+        ? this.lastState.aimPitch
+        : (ARC_ANGLES[this.lastState?.arcIndex ?? 1] || ARC_ANGLES[1]).rad;
+      const recoil = pd.recoilTimer > 0 ? Math.sin((pd.recoilTimer / 0.44) * Math.PI) * 0.44 : 0;
 
-      vis.torso.position.y = 0.46 + Math.abs(waddle) * 0.05;
-      vis.torso.rotation.set(-0.08 - recoil, 0, waddle * 0.14);
+      vis.torso.position.y = 0.45;
+      vis.torso.rotation.set(-0.08 - recoil, 0, Math.sin(time * 1.8) * 0.03);
       // Slight goofy head tilt so the panda looks chill & clumsy, never angry!
       vis.headGroup.rotation.set(0.06, -0.08, 0.14 + Math.sin(time * 2.2) * 0.05);
 
-      // Pitch weapon smoothly with chosen arc angle
-      vis.weaponMount.rotation.set(-arc.rad * 0.72 - recoil * 0.55, 0, 0);
-      vis.armR.rotation.set(-1.15 - arc.rad * 0.45, 0, -0.18);
-      vis.armL.rotation.set(-1.05 - arc.rad * 0.35, 0, 0.42);
-      vis.legL.rotation.set(-0.65 + waddle * 0.55, 0, 0.08);
-      vis.legR.rotation.set(-0.65 - waddle * 0.55, 0, -0.08);
+      // Pitch weapon smoothly with continuous launch angle!
+      vis.weaponMount.rotation.set(-pitchRad * 0.78 - recoil * 0.55, 0, 0);
+      vis.armR.rotation.set(-1.12 - pitchRad * 0.48, 0, -0.18);
+      vis.armL.rotation.set(-1.02 - pitchRad * 0.38, 0, 0.42);
+      vis.legL.rotation.set(-0.62, 0, 0.08);
+      vis.legR.rotation.set(-0.62, 0, -0.08);
       return;
     }
 
@@ -2143,13 +2576,15 @@ export class PandaRamenClient {
     }
 
     const weapon = WEAPON_BY_ID[s.selectedWeapon] || WEAPONS[0];
-    const arc = ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1];
-    const power = s.isCharging ? s.chargePower : 0.62;
+    const pitchRad = typeof s.aimPitch === 'number'
+      ? s.aimPitch
+      : (ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1]).rad;
+    const power = typeof s.aimPower === 'number' ? s.aimPower : (s.isCharging ? s.chargePower : 0.62);
     const speed = weapon.speed * (0.42 + 0.72 * power);
     const sinY = Math.sin(pd.yaw);
     const cosY = Math.cos(pd.yaw);
-    const cosP = Math.cos(arc.rad);
-    const sinP = Math.sin(arc.rad);
+    const cosP = Math.cos(pitchRad);
+    const sinP = Math.sin(pitchRad);
 
     let x = pd.x + sinY * 0.62;
     let y = pd.y + 0.78;
@@ -2160,7 +2595,7 @@ export class PandaRamenClient {
     const grav = GRAVITY * weapon.gravityScale;
 
     let landed = null;
-    const stepDt = 0.075;
+    const stepDt = 0.088;
     for (let i = 0; i < this.aimDots.length; i++) {
       const dot = this.aimDots[i];
       if (landed) {
@@ -2181,7 +2616,7 @@ export class PandaRamenClient {
       } else {
         dot.visible = true;
         dot.position.set(x, y, z);
-        const sc = (1 - i * 0.025) * (s.isCharging ? 1.15 : 0.88);
+        const sc = Math.max(0.45, 1.05 - i * 0.02);
         dot.scale.setScalar(sc);
       }
     }
@@ -2199,6 +2634,30 @@ export class PandaRamenClient {
   update(dt) {
     const time = performance.now() / 1000;
     const smooth = Math.min(1, dt * 16);
+
+    // Animate cascading waterfall & meandering mountain river flow!
+    if (this.waterfallTex) {
+      this.waterfallTex.offset.y = (this.waterfallTex.offset.y - dt * 1.35) % 1;
+    }
+    if (this.riverTex) {
+      this.riverTex.offset.y = (this.riverTex.offset.y - dt * 0.55) % 1;
+    }
+    const wf = WATERFALL_CONFIG;
+    for (const r of this.foamRings) {
+      const u = (time * 0.72 + r.phase) % 1;
+      r.mesh.scale.setScalar(0.55 + u * 1.15);
+      r.mesh.material.opacity = (1 - u) * 0.68;
+    }
+    for (const m of this.waterfallMist) {
+      const u = (time * 0.58 + m.phase) % 1;
+      m.mesh.position.set(
+        wf.x + m.ox * (0.65 + u * 0.8),
+        WATER_LEVEL + 0.12 + u * 1.35,
+        wf.poolZ + m.oz + u * 0.55,
+      );
+      m.mesh.scale.setScalar(0.65 + u * 1.1);
+      m.mesh.material.opacity = Math.sin(u * Math.PI) * 0.52;
+    }
 
     // Smoothly interpolate & animate all 8 pandas
     for (const vis of this.pandaVisuals.values()) {
