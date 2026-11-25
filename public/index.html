@@ -115,7 +115,7 @@
     </div>
   </div>
 
-  <!-- Games Main Screen Modal -->
+  <!-- Games Main Screen Modal (2-Step Staging -> Game Roller) -->
   <div id="lobbyModal" class="modal-backdrop">
     <div class="lobby-card">
       <div class="lobby-header">
@@ -125,15 +125,26 @@
         </div>
         <div class="header-actions">
           <button id="lobbyFullscreenBtn" class="secondary-btn small" type="button">Fullscreen</button>
-          <a href="./anchor.html" target="_blank" class="secondary-btn small">Print QR Anchor</a>
-          <button id="joinQrBtn" class="secondary-btn small" type="button">Invite QR</button>
           <button id="closeLobbyBtn" class="secondary-btn small hidden" type="button">Resume</button>
         </div>
       </div>
 
+      <!-- 2-Step Progress Stepper -->
+      <div class="lobby-stepper" role="tablist" aria-label="Setup steps">
+        <button id="stepTabSetup" class="step-tab active" type="button" role="tab" aria-selected="true">
+          <span class="step-num">1</span>
+          <span>Table &amp; Players</span>
+        </button>
+        <span class="step-arrow" aria-hidden="true">→</span>
+        <button id="stepTabGames" class="step-tab" type="button" role="tab" aria-selected="false">
+          <span class="step-num">2</span>
+          <span>Choose Game</span>
+        </button>
+      </div>
+
       <div id="relayBanner" class="relay-banner hidden">
         <div class="relay-banner-text">
-          <strong>Cloud Relay URL</strong> (needed on GitHub Pages to bypass hotel/corporate Wi-Fi):
+          <strong>Cloud Relay URL</strong> (needed on GitHub Pages for cross-device rooms, or play solo):
         </div>
         <div class="relay-row">
           <input id="relayInput" type="url" placeholder="wss://tabletop-ar-relay.yourname.workers.dev/ws" />
@@ -142,48 +153,79 @@
         </div>
       </div>
 
-      <div class="lobby-body">
-        <div class="lobby-col">
-          <div class="section-label">Choose a Game</div>
-          <div id="gameGrid" class="game-grid"></div>
-
-          <div class="scale-row">
-            <label for="scaleSlider">AR Board Scale: <strong id="scaleVal">1.0x</strong></label>
-            <input id="scaleSlider" type="range" min="0.5" max="1.8" step="0.1" value="1.0" />
-          </div>
-        </div>
-
-        <div class="lobby-col">
-          <div class="section-label">Your Name</div>
-          <div class="name-row">
-            <input id="nameInput" type="text" maxlength="14" placeholder="Player name" />
-            <button id="saveNameBtn" class="secondary-btn small" type="button">Set</button>
-          </div>
-
-          <div class="section-label">Players on Wi-Fi</div>
-          <div id="rosterList" class="roster-list"></div>
-
-          <div id="difficultySection" class="difficulty-section">
-            <div class="section-label">Bot Difficulty</div>
-            <div id="difficultyGroup" class="difficulty-group" role="group" aria-label="Bot difficulty">
-              <button class="diff-btn" data-difficulty="easy" type="button">Easy</button>
-              <button class="diff-btn active" data-difficulty="medium" type="button">Medium</button>
-              <button class="diff-btn" data-difficulty="hard" type="button">Hard</button>
+      <!-- STEP 1: Scan QR / Place Board & Gather Players -->
+      <section id="lobbyStepSetup" class="lobby-step" aria-label="Table and Players Setup">
+        <div class="lobby-body">
+          <div class="lobby-col setup-panel">
+            <div class="section-label">1. Table &amp; QR Anchor</div>
+            <div class="setup-board-status">
+              <span id="setupBoardDot" class="status-dot searching"></span>
+              <span id="setupBoardText">Starting camera...</span>
+            </div>
+            <div class="setup-board-actions">
+              <button id="scanBoardBtn" class="primary-btn full" type="button">📷 Scan QR / Place Board</button>
+              <div class="setup-sub-actions">
+                <button id="setupModeBtn" class="secondary-btn small" type="button">3D View</button>
+                <a href="./anchor.html" target="_blank" class="secondary-btn small">Print QR Anchor</a>
+              </div>
+            </div>
+            <div class="scale-row">
+              <label for="scaleSlider">AR Board Scale: <strong id="scaleVal">1.0x</strong></label>
+              <input id="scaleSlider" type="range" min="0.5" max="1.8" step="0.1" value="1.0" />
             </div>
           </div>
 
-          <div id="hostControls" class="host-controls hidden">
-            <button id="startGameBtn" class="primary-btn full" type="button">Start Match</button>
-            <div class="bot-row">
+          <div class="lobby-col setup-panel">
+            <div class="section-label">2. Players &amp; Room</div>
+            <div class="name-row">
+              <input id="nameInput" type="text" maxlength="14" placeholder="Your name" />
+              <button id="saveNameBtn" class="secondary-btn small" type="button">Set</button>
+              <button id="joinQrBtn" class="secondary-btn small accent-outline" type="button">Invite QR</button>
+            </div>
+
+            <div id="rosterList" class="roster-list"></div>
+
+            <div id="setupBotRow" class="bot-row hidden">
               <button id="addBotBtn" class="secondary-btn small" type="button">+ Add Bot</button>
               <button id="clearBotsBtn" class="secondary-btn small" type="button">Clear Bots</button>
             </div>
           </div>
-          <div id="guestNotice" class="guest-notice">
-            First player on this Wi-Fi is Host. Waiting for Host to start...
+        </div>
+
+        <div class="step-footer">
+          <div id="setupReadyNote" class="setup-ready-note">Scan the QR anchor or switch to 3D View, gather players, then choose a game.</div>
+          <button id="nextToGamesBtn" class="primary-btn step-cta" type="button">Next: Choose a Game →</button>
+        </div>
+      </section>
+
+      <!-- STEP 2: Slot-Machine Game Roller & Start Match -->
+      <section id="lobbyStepGames" class="lobby-step hidden" aria-label="Choose a Game">
+        <div class="games-readiness-bar">
+          <button id="backToSetupBtn" class="secondary-btn small" type="button">← Setup</button>
+          <div class="readiness-chips">
+            <span id="gamesBoardChip" class="ready-chip">Board: Pending</span>
+            <span id="gamesPlayerChip" class="ready-chip">👥 1 Player</span>
           </div>
         </div>
-      </div>
+
+        <div id="gameRollerMount" class="game-roller-mount"></div>
+
+        <div id="difficultySection" class="difficulty-section">
+          <div class="section-label">Bot Difficulty</div>
+          <div id="difficultyGroup" class="difficulty-group" role="group" aria-label="Bot difficulty">
+            <button class="diff-btn" data-difficulty="easy" type="button">Easy</button>
+            <button class="diff-btn active" data-difficulty="medium" type="button">Medium</button>
+            <button class="diff-btn" data-difficulty="hard" type="button">Hard</button>
+          </div>
+        </div>
+
+        <div id="hostControls" class="host-controls hidden">
+          <button id="startGameBtn" class="primary-btn full start-match-btn" type="button">Start Match</button>
+        </div>
+        <div id="guestNotice" class="guest-notice">
+          Waiting for Host to pick a game and start the match...
+        </div>
+      </section>
     </div>
   </div>
 

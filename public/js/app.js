@@ -2,6 +2,7 @@ import { ARTracker } from './arTracker.js';
 import { TouchControls } from './controls.js';
 import { createClientGame } from './games/registry.js';
 import { GAME_CATALOG } from './shared/gameCatalog.js';
+import { GameRoller } from './gameRoller.js';
 import { HostController } from './hostController.js';
 import {
   isLocalNodeHost,
@@ -53,6 +54,22 @@ const els = {
   lobbyModal: document.getElementById('lobbyModal'),
   closeLobbyBtn: document.getElementById('closeLobbyBtn'),
   roleBadge: document.getElementById('roleBadge'),
+  stepTabSetup: document.getElementById('stepTabSetup'),
+  stepTabGames: document.getElementById('stepTabGames'),
+  lobbyStepSetup: document.getElementById('lobbyStepSetup'),
+  lobbyStepGames: document.getElementById('lobbyStepGames'),
+  setupBoardDot: document.getElementById('setupBoardDot'),
+  setupBoardText: document.getElementById('setupBoardText'),
+  scanBoardBtn: document.getElementById('scanBoardBtn'),
+  setupModeBtn: document.getElementById('setupModeBtn'),
+  setupBotRow: document.getElementById('setupBotRow'),
+  setupReadyNote: document.getElementById('setupReadyNote'),
+  nextToGamesBtn: document.getElementById('nextToGamesBtn'),
+  backToSetupBtn: document.getElementById('backToSetupBtn'),
+  gamesBoardChip: document.getElementById('gamesBoardChip'),
+  gamesPlayerChip: document.getElementById('gamesPlayerChip'),
+  gameRollerMount: document.getElementById('gameRollerMount'),
+
   relayBanner: document.getElementById('relayBanner'),
   relayInput: document.getElementById('relayInput'),
   saveRelayBtn: document.getElementById('saveRelayBtn'),
@@ -60,7 +77,6 @@ const els = {
 
   nameInput: document.getElementById('nameInput'),
   saveNameBtn: document.getElementById('saveNameBtn'),
-  gameGrid: document.getElementById('gameGrid'),
   rosterList: document.getElementById('rosterList'),
   difficultySection: document.getElementById('difficultySection'),
   difficultyGroup: document.getElementById('difficultyGroup'),
@@ -165,6 +181,69 @@ function needsArPlacement() {
   return arTracker.mode === 'ar' && (!arTracker.anchor || !arTracker.locked);
 }
 
+let lobbyStep = 'setup'; // 'setup' (Table & Players) | 'games' (Slot-Machine Game Roller)
+let rollerPreviewGameId = hostMeta.selectedGameId;
+let lastArStatus = { mode: 'ar', anchored: false, locked: false, message: 'Starting camera...' };
+
+function setLobbyStep(step) {
+  lobbyStep = step === 'games' ? 'games' : 'setup';
+  const onSetup = lobbyStep === 'setup';
+  if (els.lobbyStepSetup) els.lobbyStepSetup.classList.toggle('hidden', !onSetup);
+  if (els.lobbyStepGames) els.lobbyStepGames.classList.toggle('hidden', onSetup);
+  if (els.stepTabSetup) {
+    els.stepTabSetup.classList.toggle('active', onSetup);
+    els.stepTabSetup.setAttribute('aria-selected', String(onSetup));
+  }
+  if (els.stepTabGames) {
+    els.stepTabGames.classList.toggle('active', !onSetup);
+    els.stepTabGames.setAttribute('aria-selected', String(!onSetup));
+  }
+  syncBoardReadinessUi();
+}
+
+function syncBoardReadinessUi() {
+  const s = lastArStatus;
+  const inPreview = s.mode === 'preview';
+  const ready = inPreview || Boolean(s.anchored);
+
+  const dotClass = 'status-dot ' + (
+    inPreview
+      ? 'preview'
+      : (s.anchored && !s.stale) || s.qrSeen
+        ? 'anchored'
+        : 'searching'
+  );
+  if (els.setupBoardDot) els.setupBoardDot.className = dotClass;
+  if (els.setupBoardText) {
+    els.setupBoardText.textContent = inPreview
+      ? '3D Tabletop View Ready'
+      : s.anchored
+        ? (arTracker.anchorSource === 'marker' ? 'QR Anchor Locked on Table' : 'Board Placed on Table')
+        : s.message;
+  }
+  if (els.scanBoardBtn) {
+    els.scanBoardBtn.textContent = !inPreview && s.anchored
+      ? '📷 Re-Scan QR / Move Board'
+      : '📷 Scan QR / Place Board';
+  }
+  if (els.setupModeBtn) {
+    els.setupModeBtn.textContent = inPreview ? 'AR Camera' : '3D View';
+  }
+  if (els.gamesBoardChip) {
+    els.gamesBoardChip.textContent = inPreview
+      ? '🖥️ 3D Tabletop'
+      : s.anchored
+        ? (arTracker.anchorSource === 'marker' ? '✅ QR Anchored' : '✅ Board Placed')
+        : '📷 Place Board Next';
+    els.gamesBoardChip.classList.toggle('ready', ready);
+  }
+  if (els.setupReadyNote) {
+    els.setupReadyNote.textContent = ready
+      ? 'Board is ready! Invite any friends, then roll the wheel to pick a game.'
+      : 'Scan the printed QR anchor on your table (or switch to 3D View), then pick a game.';
+  }
+}
+
 function closeHudMenu() {
   if (!els.hudMenuPopover) return;
   els.hudMenuPopover.classList.add('hidden');
@@ -196,8 +275,8 @@ function syncPlayUi() {
         : 'Play Here';
       els.placeConfirmText.textContent = 'Board placed! Tap table to adjust, or tap below to play.';
     } else {
-      els.confirmPlayBtn.textContent = 'Choose a Game';
-      els.placeConfirmText.textContent = 'Board placed! Pin it here and pick a game to play.';
+      els.confirmPlayBtn.textContent = 'Lock Board & Continue';
+      els.placeConfirmText.textContent = 'Board placed on table! Lock it here to gather players & pick a game.';
     }
   }
 
@@ -237,6 +316,7 @@ function handleReturnedLobby() {
   els.touchOverlay.classList.remove('panda-ramen-active');
   document.body.classList.remove('panda-ramen-active');
   els.roundBanner.classList.add('hidden');
+  setLobbyStep('games');
   els.lobbyModal.classList.remove('hidden');
   syncPlayUi();
 }
@@ -257,6 +337,7 @@ const arTracker = new ARTracker({
   videoEl: els.video,
   canvasEl: els.canvas,
   onStatus: (status) => {
+    lastArStatus = status;
     const dotClass = 'status-dot ' + (
       status.mode === 'preview'
         ? 'preview'
@@ -284,6 +365,7 @@ const arTracker = new ARTracker({
     if (status.mode === 'preview' && isSelfHost() && hostController.paused) {
       hostController.setPaused(false);
     }
+    syncBoardReadinessUi();
     syncPlayUi();
   },
 });
@@ -385,6 +467,31 @@ function getCombinedPlayers() {
   }));
 }
 
+let gameRoller = null;
+function ensureGameRoller() {
+  if (gameRoller || !els.gameRollerMount) return gameRoller;
+  gameRoller = new GameRoller({
+    containerEl: els.gameRollerMount,
+    games: GAME_CATALOG,
+    initialGameId: hostMeta.selectedGameId,
+    canControl: isSelfHost(),
+    onTick: () => {
+      sound.unlock();
+      sound.playRollerTick();
+    },
+    onSelect: (game) => {
+      if (!game) return;
+      rollerPreviewGameId = game.id;
+      if (isSelfHost() && game.status === 'playable') {
+        hostController.selectGame(game.id);
+      } else {
+        renderLobby();
+      }
+    },
+  });
+  return gameRoller;
+}
+
 function renderLobby() {
   const host = isSelfHost();
   const combined = getCombinedPlayers();
@@ -410,10 +517,39 @@ function renderLobby() {
 
   els.hostControls.classList.toggle('hidden', !host);
   els.guestNotice.classList.toggle('hidden', host);
+  if (els.setupBotRow) els.setupBotRow.classList.toggle('hidden', !host);
   els.closeLobbyBtn.classList.toggle('hidden', !hostMeta.inGame);
 
+  if (els.gamesPlayerChip) {
+    const count = Math.max(1, combined.length);
+    els.gamesPlayerChip.textContent = `👥 ${count} ${count === 1 ? 'Player' : 'Players'}`;
+  }
+
+  const roller = ensureGameRoller();
+  if (roller) {
+    roller.setCanControl(host);
+    if (!host) {
+      rollerPreviewGameId = hostMeta.selectedGameId;
+      roller.setSelectedId(hostMeta.selectedGameId, { animate: true });
+    } else if (roller.currentGame?.status === 'playable' && roller.currentGame.id !== hostMeta.selectedGameId) {
+      rollerPreviewGameId = hostMeta.selectedGameId;
+      roller.setSelectedId(hostMeta.selectedGameId, { animate: false });
+    }
+  }
+
+  const viewedGame = GAME_CATALOG.find((g) => g.id === (host ? rollerPreviewGameId : hostMeta.selectedGameId))
+    || GAME_CATALOG[0];
+  const viewedPlayable = viewedGame?.status === 'playable';
+
+  if (els.startGameBtn) {
+    els.startGameBtn.disabled = !host || !viewedPlayable;
+    els.startGameBtn.textContent = viewedPlayable
+      ? `Start ${viewedGame.name}`
+      : `${viewedGame.name} — Coming Soon`;
+  }
+
   const activeDiff = hostMeta.botDifficulty || 'medium';
-  const hasDifficulty = hostMeta.selectedGameId === 'pixel-hoops' || hostMeta.selectedGameId === 'panda-ramen';
+  const hasDifficulty = viewedGame?.id === 'pixel-hoops' || viewedGame?.id === 'panda-ramen';
   els.difficultySection.classList.toggle('hidden', !hasDifficulty);
   for (const btn of els.difficultyGroup.querySelectorAll('.diff-btn')) {
     const level = btn.dataset.difficulty;
@@ -421,31 +557,7 @@ function renderLobby() {
     btn.disabled = !host;
   }
 
-  els.gameGrid.innerHTML = '';
-  for (const game of GAME_CATALOG) {
-    const card = document.createElement('button');
-    card.type = 'button';
-    const selected = game.id === hostMeta.selectedGameId;
-    const playable = game.status === 'playable';
-    card.className = `game-card ${selected ? 'selected' : ''} ${playable ? '' : 'soon'}`;
-    card.disabled = !playable || !host;
-
-    card.innerHTML = `
-      <div class="game-card-top">
-        <span class="game-title">${game.name}</span>
-        <span class="game-pill">${playable ? (selected ? 'SELECTED' : 'READY') : 'COMING SOON'}</span>
-      </div>
-      <div class="game-desc">${game.tagline}</div>
-      ${game.controlsHint ? `<div class="game-hint">${game.controlsHint}</div>` : ''}
-    `;
-
-    if (playable && host) {
-      card.addEventListener('click', () => {
-        hostController.selectGame(game.id);
-      });
-    }
-    els.gameGrid.appendChild(card);
-  }
+  syncBoardReadinessUi();
 
   els.rosterList.innerHTML = '';
   for (const p of combined) {
@@ -913,16 +1025,59 @@ function beginMoveBoard() {
 els.replaceBtn.addEventListener('click', beginMoveBoard);
 els.adjustBoardBtn.addEventListener('click', beginMoveBoard);
 
+if (els.stepTabSetup) {
+  els.stepTabSetup.addEventListener('click', () => setLobbyStep('setup'));
+}
+if (els.stepTabGames) {
+  els.stepTabGames.addEventListener('click', () => setLobbyStep('games'));
+}
+if (els.nextToGamesBtn) {
+  els.nextToGamesBtn.addEventListener('click', () => {
+    sound.unlock();
+    setLobbyStep('games');
+  });
+}
+if (els.backToSetupBtn) {
+  els.backToSetupBtn.addEventListener('click', () => setLobbyStep('setup'));
+}
+if (els.scanBoardBtn) {
+  els.scanBoardBtn.addEventListener('click', async () => {
+    sound.unlock();
+    arTracker.requestMotionPermission();
+    if (arTracker.mode === 'preview') {
+      const ok = await arTracker.startCamera();
+      if (!ok) {
+        syncBoardReadinessUi();
+        return;
+      }
+    }
+    if (arTracker.anchor) {
+      arTracker.replaceBoard();
+    }
+    els.lobbyModal.classList.add('hidden');
+    syncPlayUi();
+  });
+}
+if (els.setupModeBtn) {
+  els.setupModeBtn.addEventListener('click', async () => {
+    sound.unlock();
+    await arTracker.toggleMode();
+    syncBoardReadinessUi();
+  });
+}
+
 els.confirmPlayBtn.addEventListener('click', () => {
   autoFullscreen();
   sound.unlock();
   arTracker.requestMotionPermission();
   arTracker.setLocked(true);
   if (!clientGame) {
+    setLobbyStep('setup');
     els.lobbyModal.classList.remove('hidden');
   } else if (isSelfHost()) {
     hostController.setPaused(false);
   }
+  syncBoardReadinessUi();
   syncPlayUi();
 });
 
@@ -977,6 +1132,7 @@ function animate(now) {
 }
 
 // Boot
+setLobbyStep('setup');
 els.relayInput.value = getSavedRelayUrl();
 connectRelay();
 arTracker.startCamera();
