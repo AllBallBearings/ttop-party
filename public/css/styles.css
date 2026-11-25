@@ -55,7 +55,13 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  max-width: calc(100vw - 86px);
   pointer-events: none;
+}
+
+body.play-ui-hidden .player-hud-bar,
+body.panda-ramen-active .player-hud-bar {
+  display: none;
 }
 
 .hud-player {
@@ -115,32 +121,118 @@ html, body {
   transition: width 0.12s linear;
 }
 
-.ar-toolbar {
+.ar-menu-wrap {
+  position: relative;
+  margin-left: auto;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
   pointer-events: auto;
+  flex-shrink: 0;
 }
 
-.ar-pill {
+.hud-menu-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 11px;
+  gap: 8px;
+  height: 38px;
+  padding: 0 13px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.74);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(10px);
+  color: #f8fafc;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.hud-menu-icon {
+  line-height: 1;
+  font-size: 17px;
+}
+
+.hud-menu-alert {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 2px solid #0f172a;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.hud-menu-popover {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  min-width: 214px;
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 25;
+}
+
+.hud-menu-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 12px;
   font-weight: 600;
+  color: #cbd5e1;
+}
+
+.hud-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 41, 59, 0.78);
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.hud-menu-item.active {
+  background: #22c55e;
+  color: #052e16;
+  border-color: #22c55e;
+}
+
+.hud-menu-item.accent {
+  background: rgba(14, 165, 233, 0.22);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #e0f2fe;
+}
+
+.hud-menu-item.primary {
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  border-color: rgba(125, 211, 252, 0.45);
+  color: #ffffff;
 }
 
 .status-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 .status-dot.searching { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
 .status-dot.anchored { background: #22c55e; box-shadow: 0 0 8px #22c55e; }
@@ -218,11 +310,19 @@ html, body {
 }
 
 .anchor-reticle {
-  width: 140px;
-  height: 140px;
+  width: 156px;
+  height: 156px;
   border: 3px dashed rgba(56, 189, 248, 0.85);
   border-radius: 18px;
   box-shadow: 0 0 30px rgba(56, 189, 248, 0.25);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.anchor-reticle.qr-seen {
+  border-color: #22c55e;
+  border-style: solid;
+  box-shadow: 0 0 34px rgba(34, 197, 94, 0.55);
+  transform: scale(1.04);
 }
 
 .anchor-prompt p {
@@ -231,6 +331,19 @@ html, body {
   border-radius: 10px;
   background: rgba(15, 23, 42, 0.78);
   font-size: 13px;
+}
+
+.anchor-status-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.84);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
 }
 
 .anchor-prompt button,
@@ -838,21 +951,26 @@ html, body {
   pointer-events: none;
 }
 
+body.play-ui-hidden .panda-ui-layer {
+  display: none !important;
+}
+
 .panda-turn-banner {
   position: fixed;
-  top: max(56px, calc(env(safe-area-inset-top) + 48px));
+  top: max(10px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 7px 14px;
+  gap: 10px;
+  padding: 5px 13px;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.82);
+  background: rgba(15, 23, 42, 0.84);
   backdrop-filter: blur(8px);
   border: 2px solid rgba(247, 226, 49, 0.55);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.38);
   white-space: nowrap;
+  max-width: calc(100vw - 92px);
 }
 
 .panda-score-chip {
@@ -1112,6 +1230,34 @@ html, body {
 }
 
 @media (max-width: 680px) {
+  .panda-turn-banner {
+    left: max(10px, env(safe-area-inset-left));
+    transform: none;
+    gap: 7px;
+    padding: 4px 10px;
+    max-width: calc(100vw - 84px);
+  }
+  .panda-score-chip {
+    font-size: 12px;
+    gap: 4px;
+  }
+  .panda-team-dot {
+    width: 9px;
+    height: 9px;
+  }
+  .panda-turn-center {
+    padding: 0 5px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .panda-turn-title {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .panda-turn-sub {
+    font-size: 10px;
+  }
   .panda-dpad {
     grid-template-columns: repeat(3, 42px);
     grid-template-rows: repeat(3, 42px);
@@ -1133,6 +1279,40 @@ html, body {
   .touch-overlay.panda-ramen-active .shoot-btn {
     width: 78px;
     height: 78px;
+  }
+}
+
+@media (max-width: 500px) {
+  .panda-dpad-wrap {
+    left: max(10px, env(safe-area-inset-left));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .panda-dpad {
+    grid-template-columns: repeat(3, 38px);
+    grid-template-rows: repeat(3, 38px);
+    gap: 3px;
+  }
+  .panda-weapon-wheel {
+    width: 152px;
+    height: 152px;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .touch-overlay.panda-ramen-active .right-controls {
+    flex-direction: column;
+    align-items: center;
+    right: max(164px, calc(env(safe-area-inset-right) + 162px));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .touch-overlay.panda-ramen-active .jump-btn {
+    width: 54px;
+    height: 54px;
+    margin-bottom: 0;
+  }
+  .touch-overlay.panda-ramen-active .shoot-btn {
+    width: 68px;
+    height: 68px;
   }
 }
 

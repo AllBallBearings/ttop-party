@@ -274,3 +274,49 @@ test('tracker yaw error is well defined when looking straight down', async () =>
     close(tr._yawError(q, down), yaw, 1e-9);
   }
 });
+
+test('MarkerAnchor emits markerseen and recovers from RELOCALIZING on valid QR', async () => {
+  const { MarkerAnchor } = await import('../../public/lib/plinth/marker/marker-anchor.js');
+  const seen = [];
+  let resets = 0;
+  const fakeEngine = {
+    trackingStatus: 'LIMITED',
+    trackingReason: 'RELOCALIZING',
+    points: new Float32Array(0),
+    on() {},
+    off() {},
+    emit(name, payload) { if (name === 'markerseen') seen.push(payload); },
+    getPose() { return null; },
+    resetTracking() { resets++; },
+  };
+  let nextResult = null;
+  const marker = new MarkerAnchor({
+    detector: { detect: async () => nextResult },
+    match: 'TABLETOP-AR-ANCHOR-V1',
+    size: 0.0967,
+    every: 1,
+    scanLongSide: 320,
+  });
+  marker.canvas = { width: 320, height: 240 };
+  marker.ctx = {
+    drawImage() {},
+    getImageData: () => ({ data: new Uint8ClampedArray(320 * 240 * 4) }),
+  };
+  marker.onAttach({ engine: fakeEngine });
+
+  const quad = [{ x: 100, y: 100 }, { x: 180, y: 100 }, { x: 180, y: 180 }, { x: 100, y: 180 }];
+  nextResult = { data: 'SOME-OTHER-QR', corners: quad };
+  marker.onCameraFrame({ engine: fakeEngine, frame: { id: 1, source: {}, width: 320, height: 240 } });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].matched, false);
+  assert.equal(resets, 0);
+
+  nextResult = { data: ' TABLETOP-AR-ANCHOR-V1 ', corners: quad };
+  marker.onCameraFrame({ engine: fakeEngine, frame: { id: 2, source: {}, width: 320, height: 240 } });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1].matched, true);
+  assert.equal(resets, 1);
+});
+
