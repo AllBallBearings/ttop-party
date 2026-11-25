@@ -1424,54 +1424,86 @@ body.play-ui-hidden .panda-ui-layer {
   opacity: 0.55;
 }
 
-.panda-charge-wrap {
-  position: fixed;
-  left: 50%;
-  bottom: max(26px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  width: min(240px, 46vw);
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 2px solid #f7e231;
-  text-align: center;
-}
-
-.panda-charge-label {
-  font-size: 10px;
+.panda-timer {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 6px;
   font-weight: 900;
-  letter-spacing: 0.1em;
   color: #fef08a;
-  margin-bottom: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.panda-charge-track {
-  width: 100%;
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  overflow: hidden;
+.panda-timer.urgent {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.85);
+  animation: pandaTimerPulse 0.55s ease-in-out infinite alternate;
 }
 
-.panda-charge-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #59c747, #f7e231, #f28c28, #ef4444);
-  transition: width 0.04s linear;
+@keyframes pandaTimerPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.16); }
 }
 
-/* Lower-right Illustrated Cartoon Weapon Wheel (matching reference image!) */
+/* Roulette Weapon Wheel — spins LARGE in center per turn, then docks in lower-right! */
 .panda-weapon-wheel {
   position: fixed;
   right: max(14px, env(safe-area-inset-right));
   bottom: max(14px, env(safe-area-inset-bottom));
-  width: 214px;
-  height: 214px;
-  pointer-events: auto;
+  width: 196px;
+  height: 196px;
+  pointer-events: none;
   filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
   user-select: none;
   touch-action: none;
+  z-index: 42;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), filter 0.25s ease;
+}
+
+.panda-weapon-wheel.roulette-center {
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(1.48);
+  z-index: 65;
+  filter: drop-shadow(0 0 36px rgba(250, 204, 21, 0.55)) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.72));
+}
+
+.panda-weapon-wheel .wheel-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.panda-weapon-wheel .roulette-banner {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #facc15;
+  color: #fef08a;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+.panda-weapon-wheel .roulette-pointer {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  line-height: 1;
+  color: #ef4444;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.85), 0 0 2px #fef08a;
+  z-index: 3;
+  pointer-events: none;
 }
 
 .panda-weapon-wheel .wheel-svg {
@@ -1481,18 +1513,12 @@ body.play-ui-hidden .panda-ui-layer {
 }
 
 .panda-weapon-wheel .wheel-slice {
-  cursor: pointer;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition: filter 0.1s ease;
   transform-origin: 112px 112px;
 }
 
-.panda-weapon-wheel .wheel-slice:hover {
-  filter: brightness(1.08);
-}
-
 .panda-weapon-wheel .wheel-slice.selected {
-  transform: scale(1.06);
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.92));
+  filter: brightness(1.14) drop-shadow(0 0 7px rgba(255, 255, 255, 0.92));
 }
 
 .panda-weapon-wheel .wheel-slice.selected .wheel-wedge {
@@ -1502,7 +1528,7 @@ body.play-ui-hidden .panda-ui-layer {
 
 .panda-weapon-wheel .wheel-label {
   font-family: "Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 900;
   fill: #ffffff;
   stroke: #111114;
@@ -1512,130 +1538,178 @@ body.play-ui-hidden .panda-ui-layer {
   letter-spacing: -0.02em;
 }
 
-.panda-weapon-wheel .wheel-hub {
-  cursor: pointer;
-}
-
 .panda-weapon-wheel .wheel-hub-top {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 900;
   fill: #94a3b8;
   letter-spacing: 0.08em;
 }
 
 .panda-weapon-wheel .wheel-hub-deg {
-  font-size: 13px;
+  font-size: 10.5px;
   font-weight: 900;
   fill: #fef08a;
 }
 
-/* Hide analog stick & shift right action buttons cleanly for Panda Ramen Rumble */
-.touch-overlay.panda-ramen-active .left-controls {
+/* Hide default twin-stick controls for Panda Ramen Rumble (slingshot handles aiming & firing!) */
+.touch-overlay.panda-ramen-active .left-controls,
+.touch-overlay.panda-ramen-active .right-controls {
   display: none;
 }
 
-.panda-dpad-wrap {
+/* Lower-left Angry-Birds Pull-Back Slingshot + Vertical Elevation Angle + NEXT Panda */
+.panda-slingshot-deck {
   position: fixed;
-  left: max(18px, env(safe-area-inset-left));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 44;
+  transition: opacity 0.18s ease;
+}
+
+.panda-slingshot-deck.disabled {
+  opacity: 0.45;
+}
+
+.panda-slingshot-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.panda-slingshot-pad {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+}
+
+.panda-slingshot-pad.pulling {
+  cursor: grabbing;
+}
+
+.panda-slingshot-pad .slingshot-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sling-readout {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.85);
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  color: #fef08a;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
   pointer-events: none;
 }
 
-.panda-dpad {
-  display: grid;
-  grid-template-columns: repeat(3, 48px);
-  grid-template-rows: repeat(3, 48px);
-  gap: 4px;
-  pointer-events: auto;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+.sling-readout.cancel {
+  border-color: rgba(248, 113, 113, 0.75);
+  color: #fca5a5;
 }
 
-.dpad-btn {
+.panda-side-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  pointer-events: auto;
+  margin-bottom: 16px;
+}
+
+.panda-next-btn {
+  width: 56px;
+  height: 44px;
+  border-radius: 12px;
   border: 2px solid rgba(255, 255, 255, 0.36);
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(15, 23, 42, 0.84);
   color: #f8fafc;
   backdrop-filter: blur(8px);
-  border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
   cursor: pointer;
-  touch-action: none;
-  padding: 0;
-  transition: transform 0.06s ease, background 0.08s ease, border-color 0.08s ease;
+  touch-action: manipulation;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.42);
 }
 
-.dpad-btn.pressed {
-  transform: scale(0.92);
+.panda-next-btn:active:not(:disabled) {
+  transform: scale(0.93);
   background: rgba(56, 189, 248, 0.85);
-  border-color: #ffffff;
-  color: #020617;
 }
 
-.dpad-up { grid-column: 2; grid-row: 1; border-radius: 14px 14px 6px 6px; }
-.dpad-left { grid-column: 1; grid-row: 2; border-radius: 14px 6px 6px 14px; }
-.dpad-center {
-  grid-column: 2;
-  grid-row: 2;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 2px solid rgba(247, 226, 49, 0.65);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.05;
+.panda-next-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
-.dpad-right { grid-column: 3; grid-row: 2; border-radius: 6px 14px 14px 6px; }
-.dpad-down { grid-column: 2; grid-row: 3; border-radius: 6px 6px 14px 14px; }
 
-.dpad-arrow {
+.panda-next-icon {
   font-size: 16px;
-  font-weight: 900;
   line-height: 1;
 }
 
-.dpad-tag {
+.panda-next-lbl {
   font-size: 8.5px;
   font-weight: 900;
   letter-spacing: 0.06em;
-  opacity: 0.85;
 }
 
-.dpad-center-lbl {
+.panda-angle-wrap {
+  width: 56px;
+  padding: 6px 4px 8px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.84);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.42);
+}
+
+.angle-lbl {
   font-size: 8px;
   font-weight: 900;
   letter-spacing: 0.08em;
   color: #94a3b8;
 }
 
-.dpad-center-val {
+.angle-val {
   font-size: 12px;
   font-weight: 900;
   color: #fef08a;
+  line-height: 1;
 }
 
-.touch-overlay.panda-ramen-active .right-controls {
-  right: max(240px, calc(env(safe-area-inset-right) + 236px));
-  bottom: max(20px, env(safe-area-inset-bottom));
-  gap: 10px;
-}
-
-.touch-overlay.panda-ramen-active .jump-btn {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 6px;
-}
-
-.touch-overlay.panda-ramen-active .shoot-btn {
-  width: 92px;
-  height: 92px;
+.angle-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 82px;
+  margin: 0;
+  accent-color: #facc15;
+  cursor: ns-resize;
+  touch-action: none;
 }
 
 @media (max-width: 680px) {
@@ -1667,61 +1741,55 @@ body.play-ui-hidden .panda-ui-layer {
   .panda-turn-sub {
     font-size: 10px;
   }
-  .panda-dpad {
-    grid-template-columns: repeat(3, 42px);
-    grid-template-rows: repeat(3, 42px);
+  .panda-slingshot-pad {
+    width: 128px;
+    height: 128px;
   }
   .panda-weapon-wheel {
-    width: 164px;
-    height: 164px;
+    width: 156px;
+    height: 156px;
     right: max(10px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
   }
-  .touch-overlay.panda-ramen-active .right-controls {
-    right: max(182px, calc(env(safe-area-inset-right) + 178px));
-    bottom: max(16px, env(safe-area-inset-bottom));
-  }
-  .touch-overlay.panda-ramen-active .jump-btn {
-    width: 62px;
-    height: 62px;
-  }
-  .touch-overlay.panda-ramen-active .shoot-btn {
-    width: 78px;
-    height: 78px;
+  .panda-weapon-wheel.roulette-center {
+    transform: translate(-50%, -50%) scale(1.42);
   }
 }
 
 @media (max-width: 500px) {
-  .panda-dpad-wrap {
-    left: max(10px, env(safe-area-inset-left));
-    bottom: max(12px, env(safe-area-inset-bottom));
+  .panda-slingshot-deck {
+    left: max(8px, env(safe-area-inset-left));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    gap: 6px;
   }
-  .panda-dpad {
-    grid-template-columns: repeat(3, 38px);
-    grid-template-rows: repeat(3, 38px);
-    gap: 3px;
+  .panda-slingshot-pad {
+    width: 114px;
+    height: 114px;
+  }
+  .panda-side-controls {
+    margin-bottom: 14px;
+    gap: 5px;
+  }
+  .panda-next-btn {
+    width: 48px;
+    height: 38px;
+  }
+  .panda-angle-wrap {
+    width: 48px;
+    padding: 5px 3px 6px;
+  }
+  .angle-slider {
+    height: 68px;
   }
   .panda-weapon-wheel {
-    width: 152px;
-    height: 152px;
+    width: 142px;
+    height: 142px;
     right: max(8px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
   }
-  .touch-overlay.panda-ramen-active .right-controls {
-    flex-direction: column;
-    align-items: center;
-    right: max(164px, calc(env(safe-area-inset-right) + 162px));
-    bottom: max(14px, env(safe-area-inset-bottom));
-    gap: 8px;
-  }
-  .touch-overlay.panda-ramen-active .jump-btn {
-    width: 54px;
-    height: 54px;
-    margin-bottom: 0;
-  }
-  .touch-overlay.panda-ramen-active .shoot-btn {
-    width: 68px;
-    height: 68px;
+  .panda-weapon-wheel.roulette-center {
+    transform: translate(-50%, -50%) scale(1.36);
   }
 }
+
 
