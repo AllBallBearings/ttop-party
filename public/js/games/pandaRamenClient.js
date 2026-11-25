@@ -452,16 +452,16 @@ function createWarheadTexture() {
 }
 
 function makeBadgeSprite(text, bgColor, textColor = '#ffffff') {
-  const tex = makeCanvasTex(256, 64, (ctx, w, h) => {
-    ctx.font = '900 28px "Trebuchet MS", system-ui, sans-serif';
+  const tex = makeCanvasTex(384, 68, (ctx, w, h) => {
+    ctx.font = '900 24px "Trebuchet MS", system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const tw = Math.min(w - 28, ctx.measureText(text).width + 26);
+    const tw = Math.min(w - 20, ctx.measureText(text).width + 32);
     const rx = (w - tw) / 2;
     const ry = 10;
     const rh = h - 20;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
     ctx.beginPath();
     ctx.roundRect(rx, ry, tw, rh, 14);
     ctx.fill();
@@ -478,7 +478,7 @@ function makeBadgeSprite(text, bgColor, textColor = '#ffffff') {
   });
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sp = new THREE.Sprite(mat);
-  sp.scale.set(2.05, 0.52, 1);
+  sp.scale.set(2.9, 0.52, 1);
   return sp;
 }
 
@@ -490,33 +490,61 @@ const sfx = {
   wheelClick() {
     sound._tone({ type: 'triangle', f0: 540, f1: 720, duration: 0.055, gain: 0.1 });
   },
+  rouletteTick() {
+    sound._tone({ type: 'triangle', f0: 820, f1: 420, duration: 0.032, gain: 0.075 });
+  },
+  rouletteLand() {
+    sound.playNotes([[523.25, 1], [659.25, 1], [783.99, 1.8]], { type: 'triangle', step: 0.06, gain: 0.12 });
+  },
+  countdownTick(urgent = false) {
+    sound._tone({ type: 'square', f0: urgent ? 880 : 620, f1: urgent ? 660 : 520, duration: 0.06, gain: 0.085 });
+  },
   hop() {
     sound._tone({ type: 'sine', f0: 260, f1: 560, duration: 0.12, gain: 0.11 });
   },
   fire(weaponId) {
-    if (weaponId === 'rocket-launcher') {
-      sound._tone({ type: 'sawtooth', f0: 220, f1: 95, duration: 0.22, gain: 0.14 });
-      sound.playNoise({ duration: 0.24, freq: 900, q: 0.7, gain: 0.14, type: 'bandpass' });
-    } else if (weaponId === 'bouncing-tire') {
-      sound._tone({ type: 'sine', f0: 180, f1: 420, duration: 0.16, gain: 0.14 });
-    } else if (weaponId === 'ramen-bomb') {
-      sound._tone({ type: 'triangle', f0: 360, f1: 580, duration: 0.16, gain: 0.12 });
-    } else if (weaponId === 'bamboo-bazooka') {
-      sound._tone({ type: 'triangle', f0: 640, f1: 320, duration: 0.11, gain: 0.13 });
+    if (weaponId === 'balloon-bazooka') {
+      sound._tone({ type: 'sine', f0: 560, f1: 280, duration: 0.24, gain: 0.13 });
+      sound.playNoise({ duration: 0.2, freq: 1400, q: 1.2, gain: 0.1, type: 'bandpass' });
+    } else if (weaponId === 'glitter-grenade') {
+      sound._tone({ type: 'triangle', f0: 320, f1: 610, duration: 0.14, gain: 0.12 });
+    } else if (weaponId === 'dumpling-airstrike') {
+      sound._tone({ type: 'sine', f0: 380, f1: 760, duration: 0.18, gain: 0.12 });
+    } else if (weaponId === 'udon-hook') {
+      sound._tone({ type: 'sawtooth', f0: 260, f1: 740, duration: 0.16, gain: 0.12 });
+    } else if (weaponId === 'towel-gun') {
+      sound.playNoise({ duration: 0.18, freq: 720, q: 0.7, gain: 0.16, type: 'bandpass' });
+      sound._tone({ type: 'sine', f0: 190, f1: 110, duration: 0.15, gain: 0.14 });
     } else {
-      sound._tone({ type: 'sine', f0: 320, f1: 680, duration: 0.15, gain: 0.13 });
+      sound._tone({ type: 'triangle', f0: 440, f1: 880, duration: 0.11, gain: 0.12 });
     }
+  },
+  lanternGong() {
+    sound.playNotes([[392, 1.5], [523.25, 2.2]], { type: 'sine', step: 0.09, gain: 0.11 });
+  },
+  udonYank() {
+    sound._tone({ type: 'sine', f0: 220, f1: 880, duration: 0.22, gain: 0.15 });
+  },
+  backfire() {
+    sound.playNoise({ duration: 0.36, freq: 380, q: 0.6, gain: 0.18, type: 'lowpass' });
+    sound.playNotes([[349.2, 1.2], [311.1, 1.2], [277.2, 1.4], [220, 2.5]], { type: 'sawtooth', step: 0.09, gain: 0.1 });
   },
   boing() {
     sound._tone({ type: 'sine', f0: 190, f1: 620, duration: 0.18, gain: 0.15 });
   },
   explosion(weaponId) {
-    if (weaponId === 'ramen-bomb') {
-      sound.playNoise({ duration: 0.32, freq: 1400, q: 0.9, gain: 0.16, type: 'bandpass' });
-      sound._tone({ type: 'sine', f0: 260, f1: 90, duration: 0.22, gain: 0.14 });
+    if (weaponId === 'glitter-grenade') {
+      sound.playNotes([[784, 0.7], [1046.5, 0.7], [1318.5, 0.9], [1568, 1.3]], { type: 'triangle', step: 0.045, gain: 0.11 });
+      sound.playNoise({ duration: 0.28, freq: 2400, q: 0.8, gain: 0.13, type: 'bandpass' });
+    } else if (weaponId === 'towel-gun') {
+      sound.playNoise({ duration: 0.34, freq: 1700, q: 0.6, gain: 0.16, type: 'bandpass' });
+      sound._tone({ type: 'sine', f0: 240, f1: 95, duration: 0.18, gain: 0.12 });
+    } else if (weaponId === 'balloon-bazooka') {
+      sound.playNoise({ duration: 0.12, freq: 1100, q: 0.5, gain: 0.2, type: 'highpass' });
+      sound._tone({ type: 'triangle', f0: 360, f1: 80, duration: 0.12, gain: 0.15 });
     } else {
-      sound.playNoise({ duration: 0.28, freq: 450, q: 0.6, gain: 0.18, type: 'lowpass' });
-      sound._tone({ type: 'triangle', f0: 190, f1: 55, duration: 0.26, gain: 0.16 });
+      sound.playNoise({ duration: 0.26, freq: 480, q: 0.6, gain: 0.16, type: 'lowpass' });
+      sound._tone({ type: 'triangle', f0: 190, f1: 55, duration: 0.24, gain: 0.15 });
     }
   },
   bonk() {
@@ -606,156 +634,239 @@ function createRamenBowl(mats, teamIdx = 0, scale = 1.0) {
 function createWeaponModel(weaponId, mats) {
   const g = new THREE.Group();
 
-  if (weaponId === 'rocket-launcher') {
-    // Stylized TF2-style chunky Rocket Launcher matching image.png!
-    // Barrel points along +Z
-    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.88, 12), mats.olive);
+  if (weaponId === 'balloon-bazooka') {
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.82, 12), mats.olive);
     tube.rotation.x = Math.PI / 2;
-    tube.position.z = 0.08;
+    tube.position.z = 0.06;
     tube.castShadow = true;
     g.add(tube);
 
-    // Warm wooden mid-grip sleeve
-    const wood = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.12, 0.38, 12), mats.wood);
+    const wood = new THREE.Mesh(new THREE.CylinderGeometry(0.125, 0.12, 0.34, 12), mats.wood);
     wood.rotation.x = Math.PI / 2;
     wood.position.z = -0.18;
-    wood.castShadow = true;
     g.add(wood);
 
-    // Gunmetal collar clamps
-    for (const zPos of [-0.36, 0.02, 0.36]) {
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.132, 0.132, 0.06, 12), mats.gunmetal);
-      band.rotation.x = Math.PI / 2;
-      band.position.z = zPos;
-      g.add(band);
-    }
-
-    // Flared slate-blue rear exhaust funnel
-    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.195, 0.26, 14), mats.exhaustBlue);
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.185, 0.24, 12), mats.exhaustBlue);
     exhaust.rotation.x = Math.PI / 2;
-    exhaust.position.z = -0.5;
-    exhaust.castShadow = true;
+    exhaust.position.z = -0.46;
     g.add(exhaust);
 
-    // Chunky whimsical painted warhead poking out the front!
-    const warhead = new THREE.Mesh(new THREE.SphereGeometry(0.165, 14, 12), mats.warhead);
-    warhead.scale.set(1.0, 1.0, 1.65);
-    warhead.position.z = 0.62;
-    warhead.castShadow = true;
-    g.add(warhead);
-
-    // Underslung cartoon trigger handle
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.1), mats.gunmetal);
-    grip.position.set(0, -0.16, -0.05);
-    grip.rotation.x = 0.22;
-    g.add(grip);
-    g.scale.setScalar(1.22);
-  } else if (weaponId === 'ramen-bomb') {
-    const megaBowl = createRamenBowl(mats, 0, 1.45);
-    megaBowl.position.set(0, -0.08, 0.25);
-    g.add(megaBowl);
-  } else if (weaponId === 'bouncing-tire') {
-    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.10, 10, 18), mats.tireRubber);
-    tire.position.set(0, 0.02, 0.24);
-    tire.rotation.y = Math.PI / 2;
-    tire.castShadow = true;
-    g.add(tire);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.14, 12), mats.gunmetal);
-    hub.rotation.z = Math.PI / 2;
-    hub.position.set(0, 0.02, 0.24);
-    g.add(hub);
-  } else if (weaponId === 'bamboo-bazooka') {
-    const main = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.12, 1.05, 10), mats.bambooLight);
-    main.rotation.x = Math.PI / 2;
-    main.position.z = 0.1;
-    main.castShadow = true;
-    g.add(main);
-    for (const zPos of [-0.32, -0.04, 0.24, 0.52]) {
-      const node = new THREE.Mesh(new THREE.TorusGeometry(0.122, 0.02, 6, 12), mats.bambooNode);
-      node.position.z = zPos;
-      g.add(node);
+    const balloon = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 12), mats.balloonPink);
+    balloon.scale.set(0.92, 0.95, 1.28);
+    balloon.position.z = 0.62;
+    balloon.castShadow = true;
+    g.add(balloon);
+    const knot = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.08, 7), mats.balloonPink);
+    knot.rotation.x = Math.PI / 2;
+    knot.position.z = 0.37;
+    g.add(knot);
+    g.scale.setScalar(1.18);
+  } else if (weaponId === 'glitter-grenade') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.17, 0.36, 10), mats.bambooLight);
+    body.position.set(0, 0.02, 0.24);
+    body.castShadow = true;
+    g.add(body);
+    for (const dy of [-0.08, 0.08]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.168, 0.022, 6, 12), mats.bambooNode);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0, 0.02 + dy, 0.24);
+      g.add(ring);
     }
-    // Side mini-tubes
+    const pin = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.015, 6, 10), mats.goldMetal);
+    pin.position.set(0.08, 0.24, 0.24);
+    g.add(pin);
+    const spark = new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 0), mats.glitterGold);
+    spark.position.set(0, 0.26, 0.24);
+    g.add(spark);
+  } else if (weaponId === 'dumpling-airstrike') {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.032, 0.85, 8), mats.bambooDark);
+    pole.rotation.x = Math.PI / 2 - 0.35;
+    pole.position.set(0, 0.08, 0.15);
+    g.add(pole);
+    const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), mats.lanternRed);
+    lantern.scale.set(1.0, 1.2, 1.0);
+    lantern.position.set(0, 0.14, 0.56);
+    lantern.castShadow = true;
+    g.add(lantern);
+    for (const dy of [-0.21, 0.21]) {
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.05, 10), mats.goldMetal);
+      cap.position.set(0, 0.14 + dy, 0.56);
+      g.add(cap);
+    }
+    const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.16, 7), mats.goldMetal);
+    tassel.position.set(0, -0.16, 0.56);
+    g.add(tassel);
+  } else if (weaponId === 'udon-hook') {
+    const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.68, 8), mats.wood);
+    stock.rotation.x = Math.PI / 2;
+    stock.position.z = 0.02;
+    g.add(stock);
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.036, 8, 14), mats.udonCream);
+    coil.position.set(0.12, -0.02, 0.06);
+    coil.rotation.y = Math.PI / 2;
+    g.add(coil);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.38, 8), mats.goldMetal);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.z = 0.48;
+    g.add(shaft);
+    for (let k = 0; k < 3; k++) {
+      const ang = (k / 3) * Math.PI * 2;
+      const prong = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.022, 6, 10, Math.PI * 0.9), mats.goldMetal);
+      prong.position.set(Math.cos(ang) * 0.06, Math.sin(ang) * 0.06, 0.62);
+      prong.rotation.z = ang + Math.PI * 0.5;
+      prong.rotation.x = Math.PI * 0.5;
+      g.add(prong);
+    }
+  } else if (weaponId === 'towel-gun') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.13, 0.68, 14), mats.exhaustBlue);
+    body.rotation.x = Math.PI / 2;
+    body.position.z = 0.06;
+    body.castShadow = true;
+    g.add(body);
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.42, 10), mats.gunmetal);
+    tank.rotation.x = Math.PI / 2;
+    tank.position.set(0, -0.17, -0.02);
+    g.add(tank);
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.155, 0.12, 14), mats.goldMetal);
+    nozzle.rotation.x = Math.PI / 2;
+    nozzle.position.z = 0.42;
+    g.add(nozzle);
+    const towel = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.34, 12), mats.towelWhite);
+    towel.rotation.x = Math.PI / 2;
+    towel.position.z = 0.56;
+    towel.castShadow = true;
+    g.add(towel);
+    g.scale.setScalar(1.12);
+  } else if (weaponId === 'lotus-sling') {
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.34, 8), mats.wood);
+    handle.position.set(0, -0.08, 0.25);
+    g.add(handle);
     for (const side of [-1, 1]) {
-      const mini = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.72, 8), mats.bambooDark);
-      mini.rotation.x = Math.PI / 2;
-      mini.position.set(side * 0.13, -0.03, 0.18);
-      g.add(mini);
+      const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.042, 0.3, 8), mats.wood);
+      fork.position.set(side * 0.13, 0.18, 0.25);
+      fork.rotation.z = -side * 0.52;
+      g.add(fork);
     }
-  } else if (weaponId === 'dumpling-drop') {
-    const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.23, 0.16, 14), mats.woodLight);
-    basket.position.set(0, -0.02, 0.24);
-    basket.castShadow = true;
-    g.add(basket);
-    for (const [dx, dz] of [[-0.09, -0.06], [0.09, -0.05], [0, 0.09], [0, -0.01]]) {
-      const bao = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), mats.dumpling);
-      bao.scale.set(1, 0.78, 1);
-      bao.position.set(dx, 0.11, 0.24 + dz);
-      g.add(bao);
-    }
-  } else if (weaponId === 'melon-cannon') {
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.13, 0.65, 12), mats.wood);
-    barrel.rotation.x = Math.PI / 2;
-    barrel.position.z = -0.04;
-    barrel.castShadow = true;
-    g.add(barrel);
-    const melon = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 12), mats.melon);
-    melon.position.set(0, 0.01, 0.42);
-    melon.castShadow = true;
-    g.add(melon);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.03), mats.lotusPink);
+    band.position.set(0, 0.28, 0.22);
+    g.add(band);
+    const bud = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), mats.lotusPink);
+    bud.position.set(0, 0.28, 0.3);
+    g.add(bud);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mats.glitterGold);
+    core.position.set(0, 0.33, 0.31);
+    g.add(core);
   }
 
   return g;
 }
 
+function createChineseLanternMesh(mats) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.68, 16, 12), mats.lanternRed);
+  body.scale.set(1.0, 1.24, 1.0);
+  body.castShadow = true;
+  g.add(body);
+  for (let i = 0; i < 4; i++) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(0.67, 0.026, 6, 20), mats.goldMetal);
+    rib.rotation.y = (i / 4) * Math.PI;
+    rib.scale.set(1.0, 1.24, 1.0);
+    g.add(rib);
+  }
+  const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.12, 14), mats.goldMetal);
+  topCap.position.y = 0.84;
+  const botCap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.12, 14), mats.goldMetal);
+  botCap.position.y = -0.84;
+  const tassel = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.42, 8), mats.goldMetal);
+  tassel.position.y = -1.14;
+  const glowLight = new THREE.PointLight(0xffaa33, 1.4, 14, 1.2);
+  glowLight.position.y = -0.2;
+  g.add(topCap, botCap, tassel, glowLight);
+  return g;
+}
+
 function createProjectileMesh(weaponId, mats, isSub = false) {
   const g = new THREE.Group();
-  if (weaponId === 'rocket-launcher') {
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10), mats.warhead);
-    body.scale.set(0.85, 0.85, 1.85);
+  if (weaponId === 'balloon-bazooka') {
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), mats.balloonPink);
+    body.scale.set(0.88, 0.92, 1.38);
     body.castShadow = true;
     g.add(body);
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.16), mats.gunmetal);
-    fin.position.z = -0.22;
-    const fin2 = fin.clone();
-    fin2.rotation.z = Math.PI / 2;
-    g.add(fin, fin2);
-    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), mats.flame);
-    glow.position.z = -0.32;
-    g.add(glow);
-  } else if (weaponId === 'ramen-bomb') {
-    const bowl = createRamenBowl(mats, 0, 1.35);
-    bowl.position.y = -0.12;
-    g.add(bowl);
-  } else if (weaponId === 'bouncing-tire') {
-    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.11, 10, 18), mats.tireRubber);
-    tire.castShadow = true;
-    g.add(tire);
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.16, 12), mats.gunmetal);
-    rim.rotation.x = Math.PI / 2;
-    g.add(rim);
-  } else if (weaponId === 'bamboo-bazooka') {
-    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 0.56, 8), mats.bambooLight);
-    stalk.rotation.x = Math.PI / 2;
-    stalk.castShadow = true;
-    g.add(stalk);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.18, 8), mats.bowlRed);
-    tip.rotation.x = Math.PI / 2;
-    tip.position.z = 0.34;
-    g.add(tip);
-  } else if (weaponId === 'dumpling-drop') {
-    const sc = isSub ? 0.65 : 1.15;
-    const bao = new THREE.Mesh(new THREE.SphereGeometry(0.22 * sc, 12, 10), mats.dumpling);
-    bao.scale.set(1.05, 0.82, 1.05);
-    bao.castShadow = true;
-    g.add(bao);
-    const pinch = new THREE.Mesh(new THREE.ConeGeometry(0.07 * sc, 0.09 * sc, 8), mats.dumpling);
-    pinch.position.y = 0.19 * sc;
-    g.add(pinch);
-  } else if (weaponId === 'melon-cannon') {
-    const melon = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), mats.melon);
-    melon.castShadow = true;
-    g.add(melon);
+    const stripe = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.032, 8, 16), mats.glitterGold);
+    g.add(stripe);
+    const knot = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.1, 8), mats.balloonPink);
+    knot.rotation.x = Math.PI / 2;
+    knot.position.z = -0.36;
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.45, 5), mats.cream);
+    tail.rotation.x = Math.PI / 2;
+    tail.position.z = -0.58;
+    g.add(knot, tail);
+  } else if (weaponId === 'glitter-grenade') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.19, 0.38, 10), mats.bambooLight);
+    body.castShadow = true;
+    g.add(body);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.025, 6, 12), mats.bambooNode);
+    band.rotation.x = Math.PI / 2;
+    g.add(band);
+    const spark = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), mats.glitterGold);
+    spark.position.y = 0.25;
+    g.add(spark);
+  } else if (weaponId === 'dumpling-airstrike') {
+    if (isSub) {
+      const bao = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), mats.dumpling);
+      bao.scale.set(1.12, 0.84, 1.12);
+      bao.castShadow = true;
+      g.add(bao);
+      const pinch = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.1, 8), mats.dumpling);
+      pinch.position.y = 0.2;
+      g.add(pinch);
+    } else {
+      const flare = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), mats.lanternRed);
+      flare.scale.set(1, 1.25, 1);
+      g.add(flare);
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), mats.glitterGold);
+      glow.material = glow.material.clone();
+      glow.material.transparent = true;
+      glow.material.opacity = 0.35;
+      g.add(glow);
+    }
+  } else if (weaponId === 'udon-hook') {
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.045, 0.48, 8), mats.goldMetal);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.castShadow = true;
+    g.add(shaft);
+    for (let k = 0; k < 3; k++) {
+      const ang = (k / 3) * Math.PI * 2;
+      const prong = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.032, 6, 12, Math.PI * 0.95), mats.goldMetal);
+      prong.position.set(Math.cos(ang) * 0.08, Math.sin(ang) * 0.08, 0.16);
+      prong.rotation.z = ang + Math.PI * 0.5;
+      prong.rotation.x = Math.PI * 0.5;
+      g.add(prong);
+    }
+  } else if (weaponId === 'towel-gun') {
+    const towel = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.52, 12), mats.towelWhite);
+    towel.rotation.z = Math.PI / 2;
+    towel.castShadow = true;
+    g.add(towel);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.022, 6, 14), mats.exhaustBlue);
+    band.rotation.y = Math.PI / 2;
+    g.add(band);
+    const steam = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mats.steam);
+    steam.position.set(0, 0.14, -0.18);
+    g.add(steam);
+  } else if (weaponId === 'lotus-sling') {
+    const center = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), mats.glitterGold);
+    g.add(center);
+    for (let p = 0; p < 6; p++) {
+      const ang = (p / 6) * Math.PI * 2;
+      const petal = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mats.lotusPink);
+      petal.scale.set(0.65, 0.32, 1.35);
+      petal.position.set(Math.sin(ang) * 0.18, 0.02, Math.cos(ang) * 0.18);
+      petal.rotation.y = ang;
+      petal.rotation.x = -0.25;
+      petal.castShadow = true;
+      g.add(petal);
+    }
   }
   return g;
 }
@@ -959,66 +1070,68 @@ function createPandaVisual(pandaData, mats) {
 
 function weaponIconSvg(id) {
   switch (id) {
-    case 'rocket-launcher':
+    case 'balloon-bazooka':
       return `
         <g transform="rotate(-24)">
-          <polygon points="-24,-7 -16,-4 -16,4 -24,7" fill="#6d8f9e" stroke="#111" stroke-width="2"/>
-          <rect x="-16" y="-5" width="12" height="10" rx="2" fill="#9c6234" stroke="#111" stroke-width="2"/>
-          <rect x="-4" y="-6" width="18" height="12" rx="2" fill="#779642" stroke="#111" stroke-width="2"/>
-          <ellipse cx="18" cy="0" rx="8" ry="6" fill="#d95397" stroke="#111" stroke-width="2"/>
-          <circle cx="17" cy="-2" r="2" fill="#f7e231"/>
-          <circle cx="20" cy="2" r="1.6" fill="#f7e231"/>
+          <rect x="-22" y="-5" width="24" height="10" rx="2" fill="#779642" stroke="#111" stroke-width="2"/>
+          <rect x="-14" y="-5" width="8" height="10" fill="#9c6234" stroke="#111" stroke-width="1.6"/>
+          <ellipse cx="14" cy="0" rx="11" ry="8.5" fill="#ec4899" stroke="#111" stroke-width="2"/>
+          <path d="M9,-5 Q14,0 9,5 M16,-6 Q20,0 16,6" fill="none" stroke="#fde047" stroke-width="2"/>
         </g>`;
-    case 'ramen-bomb':
+    case 'glitter-grenade':
       return `
         <g>
-          <path d="M-16,-2 Q-14,13 0,13 Q14,13 16,-2 Z" fill="#d43f33" stroke="#111" stroke-width="2"/>
-          <ellipse cx="0" cy="-2" rx="16" ry="5" fill="#f5d565" stroke="#111" stroke-width="1.8"/>
-          <line x1="-2" y1="-4" x2="17" y2="-16" stroke="#8a5a30" stroke-width="2.6" stroke-linecap="round"/>
-          <line x1="3" y1="-3" x2="20" y2="-12" stroke="#8a5a30" stroke-width="2.6" stroke-linecap="round"/>
-          <path d="M-8,-10 Q-10,-16 -6,-19 M0,-11 Q-2,-17 2,-20" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          <rect x="-10" y="-8" width="20" height="22" rx="5" fill="#77b83c" stroke="#111" stroke-width="2"/>
+          <line x1="-10" y1="0" x2="10" y2="0" stroke="#2c4f18" stroke-width="2.2"/>
+          <line x1="-10" y1="7" x2="10" y2="7" stroke="#2c4f18" stroke-width="2.2"/>
+          <circle cx="8" cy="-12" r="4.5" fill="none" stroke="#facc15" stroke-width="2.2"/>
+          <polygon points="-2,-19 0,-13 6,-13 1,-9 3,-3 -2,-7 -7,-3 -5,-9 -10,-13 -4,-13" fill="#fde047" stroke="#111" stroke-width="1.2"/>
         </g>`;
-    case 'bouncing-tire':
+    case 'dumpling-airstrike':
       return `
         <g>
-          <circle cx="0" cy="0" r="15" fill="#3a3d45" stroke="#111" stroke-width="2.4"/>
-          <circle cx="0" cy="0" r="7" fill="#94a3b8" stroke="#111" stroke-width="2"/>
-          <circle cx="0" cy="0" r="3" fill="#1e293b"/>
-          <path d="M-14,-4 L-10,-2 M14,4 L10,2 M-4,14 L-2,10 M4,-14 L2,-10" stroke="#111" stroke-width="2"/>
+          <ellipse cx="0" cy="-5" rx="13" ry="11" fill="#dc2626" stroke="#111" stroke-width="2"/>
+          <path d="M-5,-15 Q-8,-5 -5,5 M5,-15 Q8,-5 5,5" fill="none" stroke="#facc15" stroke-width="1.8"/>
+          <rect x="-6" y="-17" width="12" height="3.5" rx="1" fill="#facc15" stroke="#111" stroke-width="1.3"/>
+          <rect x="-6" y="5" width="12" height="3.5" rx="1" fill="#facc15" stroke="#111" stroke-width="1.3"/>
+          <ellipse cx="-6" cy="14" rx="5" ry="4" fill="#f5f3ff" stroke="#111" stroke-width="1.5"/>
+          <ellipse cx="6" cy="14" rx="5" ry="4" fill="#f5f3ff" stroke="#111" stroke-width="1.5"/>
         </g>`;
-    case 'bamboo-bazooka':
-      return `
-        <g transform="rotate(-26)">
-          <rect x="-20" y="-6" width="40" height="12" rx="3" fill="#77b83c" stroke="#111" stroke-width="2"/>
-          <line x1="-8" y1="-6" x2="-8" y2="6" stroke="#2c4f18" stroke-width="2.5"/>
-          <line x1="6" y1="-6" x2="6" y2="6" stroke="#2c4f18" stroke-width="2.5"/>
-          <rect x="-6" y="6" width="6" height="8" rx="1" fill="#8b5a30" stroke="#111" stroke-width="1.8"/>
-        </g>`;
-    case 'dumpling-drop':
+    case 'udon-hook':
       return `
         <g>
-          <path d="M-15,1 Q-13,13 0,13 Q13,13 15,1 Z" fill="#c79557" stroke="#111" stroke-width="2"/>
-          <ellipse cx="-6" cy="-2" rx="7" ry="6" fill="#f3e8ff" stroke="#111" stroke-width="1.8"/>
-          <ellipse cx="6" cy="-2" rx="7" ry="6" fill="#e9d5ff" stroke="#111" stroke-width="1.8"/>
-          <ellipse cx="0" cy="-7" rx="7" ry="6" fill="#f5f3ff" stroke="#111" stroke-width="1.8"/>
+          <path d="M-16,12 Q-6,16 -2,4 Q2,-8 10,-6" fill="none" stroke="#fff7e6" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M-16,12 Q-6,16 -2,4 Q2,-8 10,-6" fill="none" stroke="#111" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M4,-14 C14,-16 18,-6 11,1 C16,-2 17,9 7,10" fill="none" stroke="#f59e0b" stroke-width="3.6" stroke-linecap="round"/>
+          <circle cx="9" cy="-5" r="3" fill="#facc15" stroke="#111" stroke-width="1.5"/>
         </g>`;
-    case 'melon-cannon':
+    case 'towel-gun':
+      return `
+        <g transform="rotate(-18)">
+          <rect x="-19" y="-7" width="22" height="14" rx="3" fill="#64748b" stroke="#111" stroke-width="2"/>
+          <rect x="2" y="-9" width="16" height="16" rx="4" fill="#f8fafc" stroke="#111" stroke-width="2"/>
+          <line x1="10" y1="-9" x2="10" y2="7" stroke="#38bdf8" stroke-width="2.5"/>
+          <path d="M19,-8 Q23,-12 21,-16 M22,-1 Q26,-5 24,-9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+        </g>`;
+    case 'lotus-sling':
       return `
         <g>
-          <circle cx="0" cy="0" r="14" fill="#52b83e" stroke="#111" stroke-width="2.2"/>
-          <path d="M-6,-13 Q-10,0 -6,13 M0,-14 Q-2,0 0,14 M6,-13 Q10,0 6,13" fill="none" stroke="#1e591b" stroke-width="2.5"/>
-          <path d="M0,-14 Q4,-18 7,-16" fill="none" stroke="#5a381e" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M0,15 L0,3 L-11,-9 M0,3 L11,-9" fill="none" stroke="#92400e" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <ellipse cx="0" cy="-7" rx="5.5" ry="9" fill="#f472b6" stroke="#111" stroke-width="1.6"/>
+          <ellipse cx="-8" cy="-4" rx="5" ry="7.5" transform="rotate(-35 -8 -4)" fill="#f9a8d4" stroke="#111" stroke-width="1.5"/>
+          <ellipse cx="8" cy="-4" rx="5" ry="7.5" transform="rotate(35 8 -4)" fill="#f9a8d4" stroke="#111" stroke-width="1.5"/>
+          <circle cx="0" cy="-5" r="3.2" fill="#fde047"/>
         </g>`;
     default:
       return '';
   }
 }
 
-function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
+function createWeaponWheelOverlay({ onSlingshotAim, onSlingshotFire, onAngleChange, onNextPanda }) {
   const wrap = document.createElement('div');
   wrap.className = 'panda-ui-layer';
 
-  // Top-center Turn, Ramen Scoreboard & Wind Pill
+  // Top-center Turn, Ramen Scoreboard, 15s Timer & Wind Pill
   const topBanner = document.createElement('div');
   topBanner.className = 'panda-turn-banner';
   topBanner.innerHTML = `
@@ -1029,7 +1142,7 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
     <div class="panda-turn-center">
       <div id="pandaTurnLabel" class="panda-turn-title">Red Team — Mochi</div>
       <div class="panda-turn-sub">
-        <span id="pandaTimerText">28s</span>
+        <span id="pandaTimerText" class="panda-timer">15s</span>
         <span class="panda-sep">•</span>
         <span id="pandaWindText">🍃 Breeze</span>
       </div>
@@ -1041,102 +1154,216 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
   `;
   wrap.appendChild(topBanner);
 
-  // Lower-left Precision 4-Way D-Pad (Up/Down = Distance, Left/Right = Direction)
-  const dpadWrap = document.createElement('div');
-  dpadWrap.className = 'panda-dpad-wrap';
-  dpadWrap.setAttribute('aria-label', 'Aim and Distance D-Pad');
-  dpadWrap.innerHTML = `
-    <div class="panda-dpad">
-      <button type="button" class="dpad-btn dpad-up" data-dx="0" data-dy="1" aria-label="Farther">
-        <span class="dpad-arrow">▲</span>
-        <span class="dpad-tag">FAR</span>
-      </button>
-      <button type="button" class="dpad-btn dpad-left" data-dx="-1" data-dy="0" aria-label="Aim Left">
-        <span class="dpad-arrow">◀</span>
-      </button>
-      <div class="dpad-center" aria-hidden="true">
-        <span class="dpad-center-lbl">DIST</span>
-        <span id="pandaDistPct" class="dpad-center-val">50%</span>
+  // Lower-left Angry-Birds-Style Pull-Back Slingshot + Vertical Elevation Angle + NEXT Panda!
+  const aimDeck = document.createElement('div');
+  aimDeck.className = 'panda-slingshot-deck';
+  aimDeck.innerHTML = `
+    <div class="panda-slingshot-col">
+      <div id="pandaSlingshotPad" class="panda-slingshot-pad" aria-label="Pull back and release to shoot">
+        <svg class="slingshot-svg" viewBox="0 0 144 144">
+          <!-- Outer approximation dial rings -->
+          <circle cx="72" cy="72" r="64" fill="rgba(15,23,42,0.78)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"/>
+          <circle cx="72" cy="72" r="42" fill="none" stroke="rgba(255,255,255,0.12)" stroke-dasharray="4 4"/>
+          <circle cx="72" cy="72" r="15" fill="rgba(255,255,255,0.06)" stroke="rgba(247,226,49,0.45)" stroke-width="1.5"/>
+          <!-- Aim direction arrow ahead of center -->
+          <line id="slingAimLine" x1="72" y1="72" x2="72" y2="28" stroke="#f7e231" stroke-width="3" stroke-dasharray="4 4" stroke-linecap="round" opacity="0"/>
+          <!-- Stretched elastic bands from wooden prongs to puck -->
+          <line id="slingBandL" x1="56" y1="72" x2="72" y2="72" stroke="#f97316" stroke-width="5" stroke-linecap="round"/>
+          <line id="slingBandR" x1="88" y1="72" x2="72" y2="72" stroke="#f97316" stroke-width="5" stroke-linecap="round"/>
+          <!-- Wooden slingshot prongs -->
+          <circle cx="56" cy="72" r="5" fill="#92400e" stroke="#fde68a" stroke-width="1.8"/>
+          <circle cx="88" cy="72" r="5" fill="#92400e" stroke="#fde68a" stroke-width="1.8"/>
+          <!-- Draggable launch puck -->
+          <g id="slingPuck" transform="translate(72, 72)">
+            <circle cx="0" cy="0" r="18" fill="#ef4444" stroke="#ffffff" stroke-width="3"/>
+            <text id="slingPuckIcon" x="0" y="6" text-anchor="middle" font-size="16">🎈</text>
+          </g>
+        </svg>
+        <div id="slingReadout" class="sling-readout">PULL TO SHOOT</div>
       </div>
-      <button type="button" class="dpad-btn dpad-right" data-dx="1" data-dy="0" aria-label="Aim Right">
-        <span class="dpad-arrow">▶</span>
-      </button>
-      <button type="button" class="dpad-btn dpad-down" data-dx="0" data-dy="-1" aria-label="Closer">
-        <span class="dpad-tag">NEAR</span>
-        <span class="dpad-arrow">▼</span>
-      </button>
+      <div class="control-caption">PULL BACK &amp; RELEASE</div>
     </div>
-    <div class="control-caption">RANGE ▲▼ • AIM ◀▶</div>
-  `;
-  wrap.appendChild(dpadWrap);
 
-  const dpadButtons = [...dpadWrap.querySelectorAll('.dpad-btn')];
-  const activeDpadPointers = new Map(); // pointerId -> { dx, dy, btn }
-  const emitDpad = () => {
-    let dpadX = 0;
-    let dpadY = 0;
-    for (const v of activeDpadPointers.values()) {
-      if (v.dx !== 0) dpadX = v.dx;
-      if (v.dy !== 0) dpadY = v.dy;
-    }
-    onDpad({ dpadX, dpadY });
+    <div class="panda-side-controls">
+      <button id="pandaNextBtn" type="button" class="panda-next-btn" aria-label="Switch Panda">
+        <span class="panda-next-icon">🐼</span>
+        <span class="panda-next-lbl">NEXT</span>
+      </button>
+      <div class="panda-angle-wrap" aria-label="Launch angle">
+        <span class="angle-lbl">ANGLE</span>
+        <span id="pandaAngleVal" class="angle-val">42°</span>
+        <input id="pandaAngleSlider" class="angle-slider" type="range" min="14" max="74" step="1" value="42" orient="vertical" />
+      </div>
+    </div>
+  `;
+  wrap.appendChild(aimDeck);
+
+  // Wire Angry-Birds Slingshot Pull-Back & Release!
+  const padEl = aimDeck.querySelector('#pandaSlingshotPad');
+  const bandL = aimDeck.querySelector('#slingBandL');
+  const bandR = aimDeck.querySelector('#slingBandR');
+  const aimLine = aimDeck.querySelector('#slingAimLine');
+  const puckG = aimDeck.querySelector('#slingPuck');
+  const puckIcon = aimDeck.querySelector('#slingPuckIcon');
+  const readoutEl = aimDeck.querySelector('#slingReadout');
+  const angleSlider = aimDeck.querySelector('#pandaAngleSlider');
+  const angleValEl = aimDeck.querySelector('#pandaAngleVal');
+  const nextBtn = aimDeck.querySelector('#pandaNextBtn');
+
+  let slingPointerId = null;
+  let slingCanShoot = false;
+  let currentPull = { active: false, yaw: 0, power: 0.6, cancelled: true };
+
+  const resetPuckVisual = () => {
+    puckG.setAttribute('transform', 'translate(72, 72)');
+    bandL.setAttribute('x2', '72');
+    bandL.setAttribute('y2', '72');
+    bandR.setAttribute('x2', '72');
+    bandR.setAttribute('y2', '72');
+    bandL.setAttribute('stroke', '#f97316');
+    bandR.setAttribute('stroke', '#f97316');
+    aimLine.setAttribute('opacity', '0');
+    readoutEl.textContent = slingCanShoot ? 'PULL TO SHOOT' : 'WAIT TURN';
+    readoutEl.classList.remove('cancel');
+    padEl.classList.remove('pulling');
   };
 
-  for (const btn of dpadButtons) {
-    const dx = Number(btn.dataset.dx);
-    const dy = Number(btn.dataset.dy);
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      sound.unlock();
-      btn.setPointerCapture(e.pointerId);
-      btn.classList.add('pressed');
-      activeDpadPointers.set(e.pointerId, { dx, dy, btn });
-      emitDpad();
-    });
-    const release = (e) => {
-      if (!activeDpadPointers.has(e.pointerId)) return;
-      e.preventDefault();
-      activeDpadPointers.delete(e.pointerId);
-      const stillHeld = [...activeDpadPointers.values()].some((v) => v.btn === btn);
-      if (!stillHeld) btn.classList.remove('pressed');
-      emitDpad();
-    };
-    btn.addEventListener('pointerup', release);
-    btn.addEventListener('pointercancel', release);
-  }
+  const updatePullFromEvent = (e) => {
+    const rect = padEl.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const scale = 144 / Math.max(1, rect.width);
+    const maxR = 56;
+    let dx = (e.clientX - cx) * scale;
+    let dy = (e.clientY - cy) * scale;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxR) {
+      dx = (dx / dist) * maxR;
+      dy = (dy / dist) * maxR;
+    }
+    const clampedDist = Math.min(dist, maxR);
+    const px = 72 + dx;
+    const py = 72 + dy;
+    puckG.setAttribute('transform', `translate(${px.toFixed(1)}, ${py.toFixed(1)})`);
+    bandL.setAttribute('x2', px.toFixed(1));
+    bandL.setAttribute('y2', py.toFixed(1));
+    bandR.setAttribute('x2', px.toFixed(1));
+    bandR.setAttribute('y2', py.toFixed(1));
+
+    const cancelled = clampedDist < 13;
+    if (cancelled) {
+      aimLine.setAttribute('opacity', '0');
+      readoutEl.textContent = 'CANCEL';
+      readoutEl.classList.add('cancel');
+      currentPull.cancelled = true;
+      onSlingshotAim({ pulling: false });
+      return;
+    }
+
+    // Angry-Birds rule: pulling BACK shoots in the OPPOSITE direction!
+    const launchDx = -dx;
+    const launchDy = -dy; // screen-up (-dy > 0) maps to board -Z (away from viewer)
+    // Board coordinate yaw = atan2(vx, vz): +X is right, +Z is toward viewer, -Z is away from viewer
+    const aimYaw = Math.atan2(launchDx, launchDy);
+    const frac = Math.min(1, Math.max(0, (clampedDist - 13) / (maxR - 13)));
+    const power = 0.2 + frac * 0.8;
+    const pct = Math.round(frac * 100);
+
+    // Tension color: green -> yellow -> orange -> red
+    const bandColor = frac < 0.35 ? '#4ade80' : frac < 0.68 ? '#facc15' : frac < 0.88 ? '#f97316' : '#ef4444';
+    bandL.setAttribute('stroke', bandColor);
+    bandR.setAttribute('stroke', bandColor);
+
+    const arrowLen = 22 + frac * 34;
+    const len = Math.hypot(launchDx, launchDy) || 1;
+    aimLine.setAttribute('x2', (72 + (launchDx / len) * arrowLen).toFixed(1));
+    aimLine.setAttribute('y2', (72 + (launchDy / len) * arrowLen).toFixed(1));
+    aimLine.setAttribute('opacity', '0.92');
+
+    readoutEl.textContent = `POWER ${pct}%`;
+    readoutEl.classList.remove('cancel');
+    currentPull = { active: true, yaw: aimYaw, power, cancelled: false };
+    onSlingshotAim({ pulling: true, aimYaw, aimPower: power });
+  };
+
+  padEl.addEventListener('pointerdown', (e) => {
+    if (!slingCanShoot) return;
+    e.preventDefault();
+    e.stopPropagation();
+    sound.unlock();
+    slingPointerId = e.pointerId;
+    padEl.setPointerCapture(e.pointerId);
+    padEl.classList.add('pulling');
+    updatePullFromEvent(e);
+  });
+
+  padEl.addEventListener('pointermove', (e) => {
+    if (slingPointerId !== e.pointerId) return;
+    e.preventDefault();
+    updatePullFromEvent(e);
+  });
+
+  const endPull = (e) => {
+    if (slingPointerId !== e.pointerId) return;
+    e.preventDefault();
+    slingPointerId = null;
+    const pull = { ...currentPull };
+    currentPull.active = false;
+    resetPuckVisual();
+    if (slingCanShoot && !pull.cancelled) {
+      onSlingshotFire({ aimYaw: pull.yaw, aimPower: pull.power });
+    } else {
+      onSlingshotAim({ pulling: false });
+    }
+  };
+
+  padEl.addEventListener('pointerup', endPull);
+  padEl.addEventListener('pointercancel', endPull);
+
+  angleSlider.addEventListener('input', () => {
+    sound.unlock();
+    const deg = Number(angleSlider.value);
+    angleValEl.textContent = `${deg}°`;
+    onAngleChange((deg * Math.PI) / 180);
+  });
+
+  nextBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sound.unlock();
+    onNextPanda();
+  });
 
   const onBlur = () => {
-    if (activeDpadPointers.size > 0) {
-      activeDpadPointers.clear();
-      for (const b of dpadButtons) b.classList.remove('pressed');
-      onDpad({ dpadX: 0, dpadY: 0 });
+    if (slingPointerId !== null) {
+      slingPointerId = null;
+      currentPull.active = false;
+      resetPuckVisual();
+      onSlingshotAim({ pulling: false });
     }
   };
   window.addEventListener('blur', onBlur);
 
-  // Lower-right Illustrated Cartoon Weapon Wheel!
+  // Roulette Weapon Wheel (spins LARGE in center per turn, then docks in lower-right!)
   const wheelWrap = document.createElement('div');
   wheelWrap.className = 'panda-weapon-wheel';
-  wheelWrap.setAttribute('aria-label', 'Weapon Wheel');
+  wheelWrap.setAttribute('aria-label', 'Roulette Weapon Wheel');
 
   const size = 224;
   const cx = size / 2;
   const cy = size / 2;
-  const outerR = 105;
+  const outerR = 104;
   const innerR = 28;
 
-  // Hand-tuned (iconX, iconY, textX, textY) per slice so every label sits cleanly inside its wedge
   const SLICE_LAYOUT = [
-    { ix: 112, iy: 58, tx: 112, ty: 26 }, // 0: top (rocket launcher)
-    { ix: 169, iy: 72, tx: 170, ty: 97 }, // 1: top-right (ramen bomb)
-    { ix: 169, iy: 132, tx: 168, ty: 158 }, // 2: bottom-right (bouncing tire)
-    { ix: 112, iy: 160, tx: 112, ty: 186 }, // 3: bottom (bamboo bazooka)
-    { ix: 55, iy: 132, tx: 56, ty: 158 }, // 4: bottom-left (dumpling drop)
-    { ix: 55, iy: 72, tx: 54, ty: 97 }, // 5: top-left (melon cannon)
+    { ix: 112, iy: 58, tx: 112, ty: 26 },
+    { ix: 169, iy: 72, tx: 168, ty: 97 },
+    { ix: 169, iy: 132, tx: 168, ty: 158 },
+    { ix: 112, iy: 160, tx: 112, ty: 186 },
+    { ix: 55, iy: 132, tx: 56, ty: 158 },
+    { ix: 55, iy: 72, tx: 56, ty: 97 },
   ];
 
-  // 6 slices starting centered at top (-90 deg) clockwise, matching image.png!
   const sliceButtons = new Map();
   let slicesMarkup = '';
   WEAPONS.forEach((w, idx) => {
@@ -1168,9 +1395,9 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
     const line2 = words.slice(1).join(' ');
 
     slicesMarkup += `
-      <g class="wheel-slice ${idx === 0 ? 'selected' : ''}" data-weapon="${w.id}" role="button" tabindex="0">
+      <g class="wheel-slice ${idx === 0 ? 'selected' : ''}" data-weapon="${w.id}">
         <path class="wheel-wedge" d="${d}" fill="${w.color}" stroke="#141418" stroke-width="3.2" stroke-linejoin="round" />
-        <g transform="translate(${pos.ix}, ${pos.iy}) scale(0.78)">
+        <g transform="translate(${pos.ix}, ${pos.iy}) scale(0.76)">
           ${weaponIconSvg(w.id)}
         </g>
         <text class="wheel-label" x="${pos.tx}" y="${pos.ty}" text-anchor="middle">
@@ -1182,54 +1409,88 @@ function createWeaponWheelOverlay({ onSelectWeapon, onCycleArc, onDpad }) {
   });
 
   wheelWrap.innerHTML = `
-    <svg class="wheel-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-      <circle cx="${cx}" cy="${cy}" r="${outerR + 3}" fill="#141418" />
-      ${slicesMarkup}
-      <g class="wheel-hub" role="button" tabindex="0">
-        <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="#222327" stroke="#111114" stroke-width="4" />
-        <text id="wheelArcTop" x="${cx}" y="${cy - 4}" text-anchor="middle" class="wheel-hub-top">ARC</text>
-        <text id="wheelArcDeg" x="${cx}" y="${cy + 11}" text-anchor="middle" class="wheel-hub-deg">44°</text>
-      </g>
-    </svg>
+    <div id="rouletteBanner" class="roulette-banner hidden">SPINNING WEAPON...</div>
+    <div class="wheel-stage">
+      <div class="roulette-pointer" aria-hidden="true">▼</div>
+      <svg class="wheel-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+        <circle cx="${cx}" cy="${cy}" r="${outerR + 4}" fill="#141418" />
+        <g id="wheelRotor" transform="rotate(0 ${cx} ${cy})">
+          ${slicesMarkup}
+        </g>
+        <g class="wheel-hub">
+          <circle cx="${cx}" cy="${cy}" r="${innerR}" fill="#222327" stroke="#111114" stroke-width="4" />
+          <text id="wheelHubTop" x="${cx}" y="${cy - 3}" text-anchor="middle" class="wheel-hub-top">SPIN</text>
+          <text id="wheelHubBot" x="${cx}" y="${cy + 11}" text-anchor="middle" class="wheel-hub-deg">🎡</text>
+        </g>
+      </svg>
+    </div>
   `;
   wrap.appendChild(wheelWrap);
 
+  const wheelRotor = wheelWrap.querySelector('#wheelRotor');
+  const rouletteBanner = wheelWrap.querySelector('#rouletteBanner');
   for (const g of wheelWrap.querySelectorAll('.wheel-slice')) {
-    const id = g.getAttribute('data-weapon');
-    sliceButtons.set(id, g);
-    g.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      sound.unlock();
-      onSelectWeapon(id);
-    });
+    sliceButtons.set(g.getAttribute('data-weapon'), g);
   }
-
-  const hub = wheelWrap.querySelector('.wheel-hub');
-  hub.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    sound.unlock();
-    onCycleArc();
-  });
 
   document.body.appendChild(wrap);
 
+  const WEAPON_EMOJI = {
+    'balloon-bazooka': '🎈',
+    'glitter-grenade': '✨',
+    'dumpling-airstrike': '🏮',
+    'udon-hook': '🍜',
+    'towel-gun': '♨️',
+    'lotus-sling': '🪷',
+  };
+
   return {
     root: wrap,
+    wheelWrap,
+    wheelRotor,
+    rouletteBanner,
+    aimDeck,
     sliceButtons,
     redScoreEl: topBanner.querySelector('#pandaRedScore'),
     blueScoreEl: topBanner.querySelector('#pandaBlueScore'),
     turnLabelEl: topBanner.querySelector('#pandaTurnLabel'),
     timerEl: topBanner.querySelector('#pandaTimerText'),
     windEl: topBanner.querySelector('#pandaWindText'),
-    distPctEl: dpadWrap.querySelector('#pandaDistPct'),
-    arcTopEl: wheelWrap.querySelector('#wheelArcTop'),
-    arcDegEl: wheelWrap.querySelector('#wheelArcDeg'),
+    hubTopEl: wheelWrap.querySelector('#wheelHubTop'),
+    hubBotEl: wheelWrap.querySelector('#wheelHubBot'),
+    angleSlider,
+    angleValEl,
+    nextBtn,
     setSelectedWeapon(weaponId) {
       for (const [id, el] of sliceButtons.entries()) {
         el.classList.toggle('selected', id === weaponId);
       }
+      puckIcon.textContent = WEAPON_EMOJI[weaponId] || '🎈';
+    },
+    setWheelRotation(deg) {
+      wheelRotor.setAttribute('transform', `rotate(${deg.toFixed(1)} ${cx} ${cy})`);
+    },
+    setRouletteCenter(active, bannerText = '') {
+      wheelWrap.classList.toggle('roulette-center', Boolean(active));
+      rouletteBanner.classList.toggle('hidden', !active);
+      if (bannerText) rouletteBanner.textContent = bannerText;
+    },
+    setCanShoot(canShoot, canSwap) {
+      slingCanShoot = Boolean(canShoot);
+      aimDeck.classList.toggle('disabled', !slingCanShoot);
+      nextBtn.disabled = !slingCanShoot || !canSwap;
+      angleSlider.disabled = !slingCanShoot;
+      if (!slingCanShoot && slingPointerId === null) {
+        readoutEl.textContent = 'WAIT TURN';
+      } else if (slingCanShoot && !currentPull.active) {
+        readoutEl.textContent = 'PULL TO SHOOT';
+      }
+    },
+    syncAngle(deg) {
+      if (document.activeElement !== angleSlider) {
+        angleSlider.value = String(deg);
+      }
+      angleValEl.textContent = `${deg}°`;
     },
     dispose() {
       window.removeEventListener('blur', onBlur);
@@ -1256,6 +1517,9 @@ export class PandaRamenClient {
     this.lastState = null;
     this.pandaVisuals = new Map();
     this.projVisuals = new Map();
+    this.lanternVisuals = new Map();
+    this.ropeVisuals = new Map();
+    this.yankRopes = [];
     this.bambooStalks = [];
     this.particles = [];
     this.popups = [];
@@ -1268,12 +1532,28 @@ export class PandaRamenClient {
     this.aimDots = [];
     this.aimRing = null;
 
+    this.roulette = {
+      active: false,
+      turnNumber: -1,
+      startDeg: 0,
+      targetDeg: 0,
+      currentDeg: 0,
+      elapsed: 0,
+      duration: 2.55,
+      holdTail: 0.58,
+      lastTickSlice: -1,
+      landedPlayed: false,
+      weaponId: WEAPONS[0].id,
+      bannerText: '',
+    };
+    this.lastCountdownSec = 15;
+
     this.controlLabels = {
       jump: 'NEXT',
-      shoot: 'FIRE',
+      shoot: 'PULL',
       jumpIcon: '🐼',
-      shootIcon: '🚀',
-      badge: 'ROCKET LAUNCHER',
+      shootIcon: '🎈',
+      badge: 'BALLOON BAZOOKA',
       armed: true,
     };
 
@@ -1288,37 +1568,36 @@ export class PandaRamenClient {
     this._buildWindLeaves();
 
     this.ui = createWeaponWheelOverlay({
-      onSelectWeapon: (weaponId) => {
-        sfx.wheelClick();
-        this.ui.setSelectedWeapon(weaponId);
-        this.sendAction({ weapon: weaponId });
+      onSlingshotAim: ({ pulling, aimYaw, aimPower }) => {
+        if (pulling) {
+          this.sendAction({ isSlingshotPulling: true, aimYaw, aimPower });
+        } else {
+          this.sendAction({ isSlingshotPulling: false });
+        }
       },
-      onCycleArc: () => {
-        sfx.wheelClick();
-        this.sendAction({ arcCycle: true });
+      onSlingshotFire: ({ aimYaw, aimPower }) => {
+        this.sendAction({ aimYaw, aimPower, fireSlingshot: true, isSlingshotPulling: false });
       },
-      onDpad: ({ dpadX, dpadY }) => {
-        this.sendAction({ dpadX, dpadY });
+      onAngleChange: (aimPitch) => {
+        this.sendAction({ aimPitch });
+      },
+      onNextPanda: () => {
+        sfx.wheelClick();
+        this.sendAction({ nextPanda: true });
       },
     });
 
     this._onKeyDown = (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-      if (e.code >= 'Digit1' && e.code <= 'Digit6') {
-        const idx = Number(e.code.slice(5)) - 1;
-        const w = WEAPONS[idx];
-        if (w) {
-          sfx.wheelClick();
-          this.ui.setSelectedWeapon(w.id);
-          this.sendAction({ weapon: w.id });
-        }
-      } else if (e.code === 'Tab') {
+      if (e.code === 'Tab') {
         e.preventDefault();
         sfx.wheelClick();
         this.sendAction({ nextPanda: true });
-      } else if (e.code === 'KeyQ' || e.code === 'KeyE' || e.code === 'KeyR') {
-        sfx.wheelClick();
-        this.sendAction({ arcCycle: true });
+      } else if (e.code === 'KeyQ' || e.code === 'KeyE') {
+        const curDeg = this.lastState?.aimDeg ?? 36;
+        const nextDeg = Math.max(14, Math.min(74, curDeg + (e.code === 'KeyE' ? 4 : -4)));
+        this.ui.syncAngle(nextDeg);
+        this.sendAction({ aimPitch: (nextDeg * Math.PI) / 180 });
       }
     };
     window.addEventListener('keydown', this._onKeyDown);
@@ -1420,9 +1699,27 @@ export class PandaRamenClient {
       exhaustBlue: new THREE.MeshStandardMaterial({ color: 0x6d8c9a, roughness: 0.58, metalness: 0.28 }),
       warhead: new THREE.MeshStandardMaterial({ map: createWarheadTexture(), roughness: 0.62 }),
       tireRubber: new THREE.MeshStandardMaterial({ color: 0x2d3036, roughness: 0.9, metalness: 0.05 }),
-      dumpling: new THREE.MeshStandardMaterial({ color: 0xe9d8fa, roughness: 0.8 }),
+      dumpling: new THREE.MeshStandardMaterial({ color: 0xfbf4e4, roughness: 0.75 }),
       melon: new THREE.MeshStandardMaterial({ map: createMelonTexture(), roughness: 0.58 }),
       flame: new THREE.MeshBasicMaterial({ color: 0xfef08a }),
+      balloonPink: new THREE.MeshStandardMaterial({ color: 0xff5a8a, roughness: 0.28, metalness: 0.08 }),
+      goldMetal: new THREE.MeshStandardMaterial({ color: 0xf5c542, roughness: 0.32, metalness: 0.65 }),
+      glitterGold: new THREE.MeshStandardMaterial({
+        color: 0xffe45e,
+        emissive: 0xd99b00,
+        emissiveIntensity: 0.45,
+        roughness: 0.24,
+        metalness: 0.5,
+      }),
+      lanternRed: new THREE.MeshStandardMaterial({
+        color: 0xe63946,
+        emissive: 0xc1121f,
+        emissiveIntensity: 0.55,
+        roughness: 0.52,
+      }),
+      udonCream: new THREE.MeshStandardMaterial({ color: 0xf8e7b5, roughness: 0.58, metalness: 0.04 }),
+      towelWhite: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.92, metalness: 0.01 }),
+      lotusPink: new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.48, metalness: 0.04 }),
       faceHappy: new THREE.MeshStandardMaterial({ map: createPandaFaceTexture('happy'), roughness: 0.88 }),
       faceGoofy: new THREE.MeshStandardMaterial({ map: createPandaFaceTexture('goofy'), roughness: 0.88 }),
       faceSleepy: new THREE.MeshStandardMaterial({ map: createPandaFaceTexture('sleepy'), roughness: 0.9 }),
@@ -2081,34 +2378,22 @@ export class PandaRamenClient {
   }
 
   _buildAimTrajectory() {
-    const dotGeo = new THREE.SphereGeometry(0.11, 8, 6);
-    for (let i = 0; i < 24; i++) {
+    // Angry-Birds style short initial launch stub (7 fading dots, NO full-map cheat reticle!)
+    const dotGeo = new THREE.SphereGeometry(0.115, 8, 6);
+    for (let i = 0; i < 7; i++) {
       const m = new THREE.Mesh(
         dotGeo,
         new THREE.MeshBasicMaterial({
           color: i % 2 === 0 ? 0xfff8dc : 0xf7d13d,
           transparent: true,
-          opacity: Math.max(0.22, 0.92 - i * 0.028),
+          opacity: Math.max(0.18, 0.94 - i * 0.12),
         }),
       );
       m.visible = false;
       this.group.add(m);
       this.aimDots.push(m);
     }
-
-    this.aimRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.42, 0.68, 28),
-      new THREE.MeshBasicMaterial({
-        color: 0xf7e231,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.85,
-        depthWrite: false,
-      }),
-    );
-    this.aimRing.rotation.x = -Math.PI / 2;
-    this.aimRing.visible = false;
-    this.group.add(this.aimRing);
+    this.aimRing = null;
   }
 
   _buildWindLeaves() {
@@ -2175,7 +2460,7 @@ export class PandaRamenClient {
       const col = colors[i % colors.length];
       const mat = new THREE.MeshStandardMaterial({
         color: col,
-        roughness: 0.85,
+        roughness: 0.72,
         transparent: true,
         opacity: 0.95,
       });
@@ -2189,8 +2474,8 @@ export class PandaRamenClient {
         vx: Math.cos(a) * spd,
         vy: (0.45 + Math.random() * 0.9) * speed * 0.72,
         vz: Math.sin(a) * spd,
-        life: 0.55 + Math.random() * 0.35,
-        maxLife: 0.9,
+        life: 0.55 + Math.random() * 0.45,
+        maxLife: 1.0,
         gravity: 7.5,
       });
     }
@@ -2219,6 +2504,17 @@ export class PandaRamenClient {
       t: 0,
       dur: 1.15,
     });
+  }
+
+  _spawnUdonYankRope(fromX, fromY, fromZ, toX, toY, toZ) {
+    const start = new THREE.Vector3(fromX, fromY, fromZ);
+    const end = new THREE.Vector3(toX, toY, toZ);
+    const mid = start.clone().lerp(end, 0.5);
+    mid.y += 0.55;
+    const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 14, 0.055, 6, false), this.mats.udonCream);
+    this.group.add(mesh);
+    this.yankRopes.push({ mesh, life: 0.45, maxLife: 0.45 });
   }
 
   applyState(state) {
@@ -2269,30 +2565,115 @@ export class PandaRamenClient {
       if (!seenProjs.has(id)) {
         this.group.remove(pVis.mesh);
         this.projVisuals.delete(id);
+        const rope = this.ropeVisuals.get(id);
+        if (rope) {
+          this.group.remove(rope);
+          rope.geometry.dispose();
+          this.ropeVisuals.delete(id);
+        }
       }
     }
 
-    // Update lower-right Weapon Wheel, D-Pad Distance readout & Turn HUD
-    this.ui.setSelectedWeapon(state.selectedWeapon);
-    const arc = ARC_ANGLES[state.arcIndex] || ARC_ANGLES[1];
-    this.ui.arcTopEl.textContent = arc.label;
-    this.ui.arcDegEl.textContent = `${arc.deg}°`;
-    if (this.ui.distPctEl && typeof state.aimDistancePct === 'number') {
-      this.ui.distPctEl.textContent = `${state.aimDistancePct}%`;
+    // Sync overhead Chinese Paper Lanterns (Dumpling Airstrike)
+    const seenLanterns = new Set();
+    for (const l of state.lanterns || []) {
+      seenLanterns.add(l.id);
+      let lVis = this.lanternVisuals.get(l.id);
+      if (!lVis) {
+        const mesh = createChineseLanternMesh(this.mats);
+        mesh.position.set(l.x, l.y, l.z);
+        this.group.add(mesh);
+        lVis = { mesh, target: new THREE.Vector3(l.x, l.y, l.z), state: l };
+        this.lanternVisuals.set(l.id, lVis);
+      }
+      lVis.target.set(l.x, l.y, l.z);
+      lVis.state = l;
+    }
+    for (const [id, lVis] of this.lanternVisuals.entries()) {
+      if (!seenLanterns.has(id)) {
+        this.group.remove(lVis.mesh);
+        this.lanternVisuals.delete(id);
+      }
     }
 
+    // Determine whose turn it is
+    const teamInfo = TEAMS[state.activeTeam];
+    const isMyTurn = state.activeControllerId === this.selfPlayerId && !state.activeControllerIsBot;
+    const activeWeapon = WEAPON_BY_ID[state.selectedWeapon] || WEAPONS[0];
+    const winIdx = Math.max(0, WEAPONS.findIndex((w) => w.id === activeWeapon.id));
+
+    // Per-turn Roulette Weapon Wheel spin (LARGE & centered for the active user BEFORE timer starts!)
+    if (state.phase === 'wheel_spin') {
+      if (!this.roulette.active || this.roulette.turnNumber !== state.turnNumber) {
+        const spins = state.wheelSpinTurns || 4;
+        const startDeg = this.roulette.currentDeg;
+        const targetMod = (((-winIdx * 60) % 360) + 360) % 360;
+        const curMod = ((startDeg % 360) + 360) % 360;
+        const deltaMod = (targetMod - curMod + 360) % 360;
+        const duration = Math.max(1.0, state.wheelSpinDuration || 2.55);
+        const holdTail = Math.min(0.62, duration * 0.25);
+
+        this.roulette = {
+          active: true,
+          turnNumber: state.turnNumber,
+          startDeg,
+          targetDeg: startDeg + spins * 360 + deltaMod,
+          currentDeg: startDeg,
+          elapsed: Math.max(0, duration - (state.wheelSpinLeft ?? duration)),
+          duration,
+          holdTail,
+          lastTickSlice: Math.floor(startDeg / 60),
+          landedPlayed: false,
+          weaponId: activeWeapon.id,
+          bannerText: isMyTurn
+            ? `🎡 ${state.activePandaName.toUpperCase()}'S WEAPON ROULETTE!`
+            : `🎡 ${teamInfo.name.toUpperCase()} SPINNING...`,
+        };
+        this.lastCountdownSec = 15;
+      }
+      // Appear large & centered for the user whose turn it is!
+      this.ui.setRouletteCenter(isMyTurn, this.roulette.bannerText);
+    } else {
+      if (this.roulette.active) {
+        this.roulette.active = false;
+      }
+      const lockedDeg = (((-winIdx * 60) % 360) + 360) % 360;
+      this.roulette.currentDeg = lockedDeg;
+      this.ui.setWheelRotation(lockedDeg);
+      this.ui.setRouletteCenter(false);
+      this.ui.setSelectedWeapon(activeWeapon.id);
+      const shortHub = activeWeapon.id === 'towel-gun' ? 'TOWEL' : activeWeapon.name.split(' ')[0].toUpperCase();
+      this.ui.hubTopEl.textContent = 'LOCKED';
+      this.ui.hubBotEl.textContent = shortHub;
+    }
+
+    // Score, Turn, 15s Urgent Timer & Wind HUD
     this.ui.redScoreEl.textContent = `🍜 ${state.ramenLeft[0]}`;
     this.ui.blueScoreEl.textContent = `${state.ramenLeft[1]} 🍜`;
 
-    const teamInfo = TEAMS[state.activeTeam];
-    const isMyTurn = state.activeControllerId === this.selfPlayerId && !state.activeControllerIsBot;
     if (state.phase === 'round_over') {
       this.ui.turnLabelEl.textContent = `${state.winnerName} Wins! 🍜`;
+    } else if (state.phase === 'wheel_spin') {
+      const who = isMyTurn ? 'YOUR TURN' : (state.activeControllerIsBot ? `${teamInfo.name} AI` : state.activeControllerName);
+      this.ui.turnLabelEl.textContent = `${who} — SPINNING WHEEL!`;
     } else {
       const who = isMyTurn ? 'YOUR TURN' : (state.activeControllerIsBot ? `${teamInfo.name} AI` : state.activeControllerName);
       this.ui.turnLabelEl.textContent = `${who} — ${state.activePandaName}`;
     }
-    this.ui.timerEl.textContent = `${Math.ceil(state.turnTimeLeft)}s`;
+
+    if (state.phase === 'wheel_spin') {
+      this.ui.timerEl.textContent = 'SPIN';
+      this.ui.timerEl.classList.remove('urgent');
+    } else {
+      const sec = Math.max(0, Math.ceil(state.turnTimeLeft));
+      this.ui.timerEl.textContent = `${sec}s`;
+      const urgent = state.phase === 'aim' && sec <= 5 && sec > 0;
+      this.ui.timerEl.classList.toggle('urgent', urgent);
+      if (isMyTurn && urgent && sec !== this.lastCountdownSec) {
+        this.lastCountdownSec = sec;
+        sfx.countdownTick(sec <= 3);
+      }
+    }
 
     const windMag = Math.hypot(state.windX, state.windZ);
     const windArrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
@@ -2300,30 +2681,43 @@ export class PandaRamenClient {
     const windLabel = windMag < 0.45 ? 'Calm' : windMag < 1.1 ? 'Breeze' : 'Gusty';
     this.ui.windEl.textContent = `🍃 ${windLabel} ${windArrows[windIdx]}`;
 
-    // Touch action button labels (secondary button swaps active panda, FIRE shoots immediately!)
-    const activeWeapon = WEAPON_BY_ID[state.selectedWeapon] || WEAPONS[0];
+    // Sync Slingshot Pad, Elevation Angle Slider & NEXT Panda Button
     const canSwap = (state.ramenLeft?.[state.activeTeam] || 0) > 1;
+    this.ui.setCanShoot(isMyTurn && state.phase === 'aim', canSwap);
+    if (typeof state.aimDeg === 'number') {
+      this.ui.syncAngle(state.aimDeg);
+    }
+
     this.controlLabels = isMyTurn && state.phase === 'aim'
       ? {
           jump: canSwap ? 'NEXT' : 'SOLO',
-          shoot: 'FIRE',
+          shoot: 'PULL',
           jumpIcon: '🐼',
-          shootIcon: state.selectedWeapon === 'ramen-bomb' ? '🍜' : state.selectedWeapon === 'bouncing-tire' ? '🛞' : '🚀',
+          shootIcon: '🎯',
           badge: activeWeapon.displayName.toUpperCase(),
           armed: true,
         }
       : {
           jump: 'WAIT',
-          shoot: 'TURN',
+          shoot: state.phase === 'wheel_spin' ? 'SPIN' : 'TURN',
           jumpIcon: '🐼',
-          shootIcon: '🍜',
-          badge: state.phase === 'aim' ? `${teamInfo.name.toUpperCase()}` : 'WATCH!',
+          shootIcon: '🎡',
+          badge: state.phase === 'wheel_spin' ? 'ROULETTE SPIN' : `${teamInfo.name.toUpperCase()}`,
           armed: false,
         };
 
     // Process one-shot game events for juicy Fall-Guys visuals & sounds
     for (const ev of state.events || []) {
       switch (ev.type) {
+        case 'wheel_spin_start':
+          this.lastCountdownSec = 15;
+          break;
+        case 'wheel_spin_end':
+          if (!this.roulette.landedPlayed) {
+            this.roulette.landedPlayed = true;
+            sfx.rouletteLand();
+          }
+          break;
         case 'panda_switch':
           sfx.hop();
           this._spawnCartoonBurst(ev.x, ev.y + 0.35, ev.z, [0xf7e231, 0xf3ede0], 7, 1.8, 0.08);
@@ -2333,26 +2727,54 @@ export class PandaRamenClient {
           sfx.fire(ev.weapon);
           this._spawnCartoonBurst(ev.x, ev.y, ev.z, [0xfff8dc, 0xf7e231, 0xe2e8f0], 10, 2.4, 0.12);
           break;
-        case 'tire_bounce':
+        case 'grenade_bounce':
           sfx.boing();
-          this._spawnCartoonBurst(ev.x, ev.y, ev.z, [0xf7e231, 0xffffff, 0x94a3b8], 10, 2.8, 0.11);
-          this._spawnPopup('BOING!', '#f5c724', ev.x, ev.y + 0.9, ev.z);
+          this._spawnCartoonBurst(ev.x, ev.y, ev.z, [0x4ade80, 0xffe45e, 0xf472b6, 0xffffff], 14, 3.0, 0.11);
+          this._spawnPopup('BOING! ✨', '#4ade80', ev.x, ev.y + 0.9, ev.z);
           break;
-        case 'cluster_split':
-          sfx.boing();
-          this._spawnCartoonBurst(ev.x, ev.y, ev.z, [0xe9d5ff, 0xa54bd6, 0xffffff], 12, 2.6, 0.12);
-          this._spawnPopup('POP!', '#a54bd6', ev.x, ev.y + 0.6, ev.z);
+        case 'lantern_airstrike':
+          sfx.lanternGong();
+          this._spawnCartoonBurst(ev.x, ev.y - 0.5, ev.z, [0xe63946, 0xf5c542, 0xfef08a], 16, 3.2, 0.14);
+          this._spawnPopup('🏮 DUMPLING AIRSTRIKE!', '#e63946', ev.x, ev.y - 1.5, ev.z);
+          break;
+        case 'udon_yank':
+          sfx.udonYank();
+          this._spawnUdonYankRope(ev.fromX, ev.fromY, ev.fromZ, ev.x, ev.y, ev.z);
+          this._spawnCartoonBurst(ev.x, ev.y + 0.25, ev.z, [0xf8e7b5, 0xfde68a, 0xffffff], 16, 3.4, 0.12);
+          this._spawnPopup('YOINK! 🍜', '#f59e0b', ev.x, ev.y + 1.05, ev.z);
+          break;
+        case 'backfire':
+          sfx.backfire();
+          this._spawnCartoonBurst(ev.x, ev.y + 0.2, ev.z, [0xef4444, 0xfacc15, 0x1e293b, 0xffffff], 28, 4.4, 0.17);
+          this._spawnPopup('💥 BACKFIRE! 💤', '#dc2626', ev.x, ev.y + 1.25, ev.z);
           break;
         case 'explosion': {
           sfx.explosion(ev.weapon);
-          const palette = ev.weapon === 'ramen-bomb'
-            ? [0xf5d565, 0xf28c28, 0xffffff, 0xec6a92]
-            : ev.weapon === 'melon-cannon'
-              ? [0x59c747, 0xff5e7e, 0xf7e231]
-              : ev.weapon === 'dumpling-drop'
-                ? [0xe9d5ff, 0xa54bd6, 0xffffff]
-                : [0xf7e231, 0xf28c28, 0xfff8dc, 0xd45a9e];
-          this._spawnCartoonBurst(ev.x, ev.y + 0.2, ev.z, palette, 18, 3.8, 0.16);
+          if (ev.weapon === 'glitter-grenade') {
+            // Dazzling rainbow glitter explosion!
+            this._spawnCartoonBurst(
+              ev.x,
+              ev.y + 0.25,
+              ev.z,
+              [0xff4d94, 0xffe45e, 0x38bdf8, 0xa855f7, 0x4ade80, 0xffffff],
+              36,
+              4.6,
+              0.13,
+            );
+            this._spawnPopup('✨ GLITTER BOOM!', '#ec4899', ev.x, ev.y + 1.0, ev.z);
+          } else if (ev.weapon === 'towel-gun') {
+            this._spawnCartoonBurst(ev.x, ev.y + 0.25, ev.z, [0xffffff, 0xe0f2fe, 0xbae6fd], 20, 3.4, 0.18);
+            this._spawnPopup('♨️ HOT TOWEL!', '#38bdf8', ev.x, ev.y + 0.95, ev.z);
+          } else if (ev.weapon === 'lotus-sling') {
+            this._spawnCartoonBurst(ev.x, ev.y + 0.2, ev.z, [0xf472b6, 0xfbcfe8, 0xfde047, 0xffffff], 18, 3.6, 0.14);
+          } else if (ev.weapon === 'balloon-bazooka') {
+            this._spawnCartoonBurst(ev.x, ev.y + 0.25, ev.z, [0xff5a8a, 0xffe45e, 0x38bdf8, 0x4ade80], 24, 4.2, 0.15);
+            this._spawnPopup('POP! 🎈', '#ff5a8a', ev.x, ev.y + 0.95, ev.z);
+          } else if (ev.weapon === 'dumpling-airstrike') {
+            this._spawnCartoonBurst(ev.x, ev.y + 0.2, ev.z, [0xfef3c7, 0xfde68a, 0xffffff, 0xf97316], 16, 3.4, 0.14);
+          } else {
+            this._spawnCartoonBurst(ev.x, ev.y + 0.2, ev.z, [0xf8e7b5, 0xfde68a, 0xffffff], 14, 3.0, 0.13);
+          }
           break;
         }
         case 'bonk':
@@ -2430,7 +2852,7 @@ export class PandaRamenClient {
     }
 
     // Show weapon only when active!
-    const activeWepId = this.lastState?.selectedWeapon || 'rocket-launcher';
+    const activeWepId = this.lastState?.selectedWeapon || 'balloon-bazooka';
     for (const [wid, wm] of Object.entries(vis.weaponMeshes)) {
       wm.visible = isActive && wid === activeWepId;
     }
@@ -2502,14 +2924,18 @@ export class PandaRamenClient {
         ? this.lastState.aimPitch
         : (ARC_ANGLES[this.lastState?.arcIndex ?? 1] || ARC_ANGLES[1]).rad;
       const recoil = pd.recoilTimer > 0 ? Math.sin((pd.recoilTimer / 0.44) * Math.PI) * 0.44 : 0;
+      // Comical sputtering rattle in the last 3.5 seconds before weapon backfire!
+      const urgentShake = this.lastState?.phase === 'aim' && this.lastState.turnTimeLeft <= 3.5
+        ? Math.sin(time * 42) * 0.11 * (1 - Math.max(0, this.lastState.turnTimeLeft) / 3.5)
+        : 0;
 
       vis.torso.position.y = 0.45;
-      vis.torso.rotation.set(-0.08 - recoil, 0, Math.sin(time * 1.8) * 0.03);
+      vis.torso.rotation.set(-0.08 - recoil, 0, Math.sin(time * 1.8) * 0.03 + urgentShake * 0.5);
       // Slight goofy head tilt so the panda looks chill & clumsy, never angry!
       vis.headGroup.rotation.set(0.06, -0.08, 0.14 + Math.sin(time * 2.2) * 0.05);
 
       // Pitch weapon smoothly with continuous launch angle!
-      vis.weaponMount.rotation.set(-pitchRad * 0.78 - recoil * 0.55, 0, 0);
+      vis.weaponMount.rotation.set(-pitchRad * 0.78 - recoil * 0.55 + urgentShake, 0, urgentShake * 1.2);
       vis.armR.rotation.set(-1.12 - pitchRad * 0.48, 0, -0.18);
       vis.armL.rotation.set(-1.02 - pitchRad * 0.38, 0, 0.42);
       vis.legL.rotation.set(-0.62, 0, 0.08);
@@ -2561,49 +2987,46 @@ export class PandaRamenClient {
     }
   }
 
-  _updateAimTrajectory(time) {
+  _updateAimTrajectory() {
     const s = this.lastState;
     if (!s || s.phase !== 'aim') {
       for (const d of this.aimDots) d.visible = false;
-      this.aimRing.visible = false;
       return;
     }
     const pd = s.pandas.find((p) => p.id === s.activePandaId);
     if (!pd || !pd.hasRamen) {
       for (const d of this.aimDots) d.visible = false;
-      this.aimRing.visible = false;
       return;
     }
 
+    // Angry-Birds style short initial direction & force stub (7 fading dots out of the barrel)
     const weapon = WEAPON_BY_ID[s.selectedWeapon] || WEAPONS[0];
     const pitchRad = typeof s.aimPitch === 'number'
       ? s.aimPitch
       : (ARC_ANGLES[s.arcIndex] || ARC_ANGLES[1]).rad;
-    const power = typeof s.aimPower === 'number' ? s.aimPower : (s.isCharging ? s.chargePower : 0.62);
+    const power = typeof s.aimPower === 'number' ? s.aimPower : 0.62;
     const speed = weapon.speed * (0.42 + 0.72 * power);
     const sinY = Math.sin(pd.yaw);
     const cosY = Math.cos(pd.yaw);
     const cosP = Math.cos(pitchRad);
     const sinP = Math.sin(pitchRad);
 
-    let x = pd.x + sinY * 0.62;
-    let y = pd.y + 0.78;
-    let z = pd.z + cosY * 0.62;
+    let x = pd.x + sinY * 0.65;
+    let y = pd.y + 0.82;
+    let z = pd.z + cosY * 0.65;
     let vx = sinY * cosP * speed;
     let vy = sinP * speed;
     let vz = cosY * cosP * speed;
     const grav = GRAVITY * weapon.gravityScale;
 
-    let landed = null;
-    const stepDt = 0.088;
+    let blocked = false;
+    const stepDt = 0.064;
     for (let i = 0; i < this.aimDots.length; i++) {
       const dot = this.aimDots[i];
-      if (landed) {
+      if (blocked) {
         dot.visible = false;
         continue;
       }
-      vx += s.windX * 0.45 * stepDt;
-      vz += s.windZ * 0.45 * stepDt;
       vy -= grav * stepDt;
       x += vx * stepDt;
       y += vy * stepDt;
@@ -2611,29 +3034,63 @@ export class PandaRamenClient {
 
       const g = getSurfaceHeight(x, z, y + 0.3);
       if (y <= g + 0.08 || Math.abs(x) > HALF_W || Math.abs(z) > HALF_D) {
-        landed = { x: Math.max(-HALF_W, Math.min(HALF_W, x)), y: g + 0.05, z: Math.max(-HALF_D, Math.min(HALF_D, z)) };
+        blocked = true;
         dot.visible = false;
       } else {
         dot.visible = true;
         dot.position.set(x, y, z);
-        const sc = Math.max(0.45, 1.05 - i * 0.02);
+        const sc = Math.max(0.42, 1.05 - i * 0.09);
         dot.scale.setScalar(sc);
+        dot.material.color.setHex(s.isCharging ? (i % 2 === 0 ? 0xfef08a : 0xf97316) : (i % 2 === 0 ? 0xfff8dc : 0xf7d13d));
       }
     }
+  }
 
-    if (landed) {
-      this.aimRing.visible = true;
-      this.aimRing.position.set(landed.x, landed.y, landed.z);
-      const pulse = 0.92 + Math.sin(time * 7) * 0.12;
-      this.aimRing.scale.setScalar(pulse);
+  _updateRoulette(dt) {
+    if (!this.roulette.active) return;
+    const r = this.roulette;
+    r.elapsed += dt;
+    const spinDur = Math.max(0.45, r.duration - r.holdTail);
+    const u = Math.min(1, r.elapsed / spinDur);
+    // Smooth casino roulette cubic ease-out!
+    const ease = 1 - Math.pow(1 - u, 3);
+    const deg = r.startDeg + (r.targetDeg - r.startDeg) * ease;
+    r.currentDeg = deg;
+    this.ui.setWheelRotation(deg);
+
+    const sliceCross = Math.floor((deg + 30) / 60);
+    if (sliceCross !== r.lastTickSlice && u < 1) {
+      r.lastTickSlice = sliceCross;
+      sfx.rouletteTick();
+    }
+
+    if (u < 1) {
+      const curIdx = (((Math.round(-deg / 60)) % WEAPONS.length) + WEAPONS.length) % WEAPONS.length;
+      const curW = WEAPONS[curIdx] || WEAPONS[0];
+      this.ui.setSelectedWeapon(curW.id);
+      this.ui.hubTopEl.textContent = 'SPIN';
+      this.ui.hubBotEl.textContent = '🎡';
     } else {
-      this.aimRing.visible = false;
+      const winW = WEAPON_BY_ID[r.weaponId] || WEAPONS[0];
+      this.ui.setSelectedWeapon(winW.id);
+      this.ui.hubTopEl.textContent = 'USE!';
+      this.ui.hubBotEl.textContent = winW.id === 'towel-gun' ? 'TOWEL' : winW.name.split(' ')[0].toUpperCase();
+      if (!r.landedPlayed) {
+        r.landedPlayed = true;
+        sfx.rouletteLand();
+      }
+      if (this.ui.rouletteBanner && !this.ui.rouletteBanner.classList.contains('hidden')) {
+        this.ui.rouletteBanner.textContent = `🎉 ${winW.displayName.toUpperCase()}!`;
+      }
     }
   }
 
   update(dt) {
     const time = performance.now() / 1000;
     const smooth = Math.min(1, dt * 16);
+
+    // Animate per-turn Roulette Weapon Wheel spin!
+    this._updateRoulette(dt);
 
     // Animate cascading waterfall & meandering mountain river flow!
     if (this.waterfallTex) {
@@ -2673,19 +3130,68 @@ export class PandaRamenClient {
       this._animatePanda(vis, dt, time);
     }
 
-    // Smoothly move & spin projectiles
+    // Smoothly move overhead Chinese Paper Lanterns with gentle festive sway
+    const ls = Math.min(1, dt * 14);
+    for (const lVis of this.lanternVisuals.values()) {
+      lVis.mesh.position.lerp(lVis.target, ls);
+      lVis.mesh.rotation.y = lVis.state.yaw;
+      lVis.mesh.rotation.z = Math.sin(time * 4.2) * 0.12;
+      lVis.mesh.rotation.x = Math.cos(time * 3.1) * 0.08;
+    }
+
+    // Smoothly move, orient & tether projectiles (including live 3D Udon noodle rope!)
     const ps = Math.min(1, dt * 24);
-    for (const pVis of this.projVisuals.values()) {
+    for (const [id, pVis] of this.projVisuals.entries()) {
       pVis.mesh.position.lerp(pVis.target, ps);
       const st = pVis.state;
-      if (st.weaponId === 'rocket-launcher' || st.weaponId === 'bamboo-bazooka') {
+      if (st.weaponId === 'balloon-bazooka' || st.weaponId === 'udon-hook' || st.weaponId === 'towel-gun') {
         const dir = new THREE.Vector3(st.vx, st.vy, st.vz);
         if (dir.lengthSq() > 0.01) {
           pVis.mesh.lookAt(pVis.mesh.position.clone().add(dir));
         }
+        if (st.weaponId === 'towel-gun') {
+          pVis.mesh.rotation.z += st.spin * 0.12;
+        }
+      } else if (st.weaponId === 'lotus-sling') {
+        pVis.mesh.rotation.y = st.spin * 1.4;
+        pVis.mesh.rotation.x = Math.sin(time * 8) * 0.25;
       } else {
         pVis.mesh.rotation.x = st.spin;
         pVis.mesh.rotation.z = st.spin * 0.6;
+      }
+
+      // Live wavy Udon noodle rope stretching from panda to flying grappling hook!
+      if (st.weaponId === 'udon-hook') {
+        const start = new THREE.Vector3(st.originX, st.originY, st.originZ);
+        const end = pVis.mesh.position.clone();
+        if (start.distanceTo(end) > 0.15) {
+          const mid = start.clone().lerp(end, 0.5);
+          mid.y += Math.sin(time * 16) * 0.18 - 0.14;
+          const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+          const geo = new THREE.TubeGeometry(curve, 12, 0.042, 6, false);
+          let ropeMesh = this.ropeVisuals.get(id);
+          if (!ropeMesh) {
+            ropeMesh = new THREE.Mesh(geo, this.mats.udonCream);
+            this.group.add(ropeMesh);
+            this.ropeVisuals.set(id, ropeMesh);
+          } else {
+            ropeMesh.geometry.dispose();
+            ropeMesh.geometry = geo;
+          }
+        }
+      }
+    }
+
+    // Fade out dramatic Udon yank snap lines
+    for (let i = this.yankRopes.length - 1; i >= 0; i--) {
+      const yr = this.yankRopes[i];
+      yr.life -= dt;
+      if (yr.life <= 0) {
+        this.group.remove(yr.mesh);
+        yr.mesh.geometry.dispose();
+        this.yankRopes.splice(i, 1);
+      } else {
+        yr.mesh.scale.setScalar(0.6 + 0.4 * (yr.life / yr.maxLife));
       }
     }
 
@@ -2718,8 +3224,8 @@ export class PandaRamenClient {
       }
     }
 
-    // Update 3D aim arc dots
-    this._updateAimTrajectory(time);
+    // Update short Angry-Birds 3D aim stub
+    this._updateAimTrajectory();
 
     // Flying captured ramen bowls arcing to the winning team's den!
     for (let i = this.flyingBowls.length - 1; i >= 0; i--) {
@@ -2775,6 +3281,16 @@ export class PandaRamenClient {
 
   dispose() {
     window.removeEventListener('keydown', this._onKeyDown);
+    for (const rope of this.ropeVisuals.values()) {
+      this.group.remove(rope);
+      rope.geometry.dispose();
+    }
+    this.ropeVisuals.clear();
+    for (const yr of this.yankRopes) {
+      this.group.remove(yr.mesh);
+      yr.mesh.geometry.dispose();
+    }
+    this.yankRopes = [];
     if (this.ui) this.ui.dispose();
     this.boardRoot.remove(this.group);
   }

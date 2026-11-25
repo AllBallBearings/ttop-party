@@ -112,6 +112,11 @@ class SoundEngine {
       }, i * 95);
     });
   }
+
+  /** Crisp mechanical detent click when rolling the slot-machine game selector. */
+  playRollerTick() {
+    this._tone({ type: 'triangle', f0: 760, f1: 360, duration: 0.036, gain: 0.065 });
+  }
 }
 
 export const sound = new SoundEngine();

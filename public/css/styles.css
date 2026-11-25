@@ -667,57 +667,466 @@ body.panda-ramen-active .player-hud-bar {
   margin-bottom: 8px;
 }
 
-.game-grid {
+/* 2-Step Lobby Stepper & Setup Staging */
+.lobby-stepper {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
   margin-bottom: 14px;
 }
 
-.game-card {
-  width: 100%;
-  text-align: left;
-  padding: 11px 13px;
+.step-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(30, 41, 59, 0.72);
-  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.55);
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 800;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-.game-card.selected {
-  border-color: #38bdf8;
-  background: rgba(14, 165, 233, 0.18);
+
+.step-tab.active {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(56, 189, 248, 0.72);
+  color: #f8fafc;
 }
-.game-card.soon {
-  opacity: 0.55;
+
+.step-num {
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.24);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.step-tab.active .step-num {
+  background: #0ea5e9;
+  color: #ffffff;
+}
+
+.step-arrow {
+  color: #64748b;
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.lobby-step {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setup-panel {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 13px 14px;
+}
+
+.setup-board-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+}
+
+.setup-board-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.setup-sub-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.setup-sub-actions > * {
+  flex: 1;
+}
+
+.secondary-btn.accent-outline {
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  color: #7dd3fc;
+}
+
+.step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.setup-ready-note {
+  flex: 1;
+  min-width: 190px;
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.step-cta {
+  min-width: 210px;
+  padding: 12px 18px;
+  font-size: 14px;
+}
+
+@media (max-width: 560px) {
+  .step-cta {
+    width: 100%;
+  }
+}
+
+.games-readiness-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.readiness-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ready-chip {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+}
+
+.ready-chip.ready {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #86efac;
+}
+
+/* 3D Slot-Machine Game Roller Control */
+.game-roller-mount {
+  width: 100%;
+}
+
+.game-roller {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  outline: none;
+}
+
+.roller-nudge {
+  width: 72px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(30, 41, 59, 0.88);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.08s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.roller-nudge:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.6);
+}
+
+.roller-nudge:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.roller-nudge:disabled {
+  opacity: 0.28;
   cursor: default;
 }
 
-.game-card-top {
+.roller-viewport {
+  position: relative;
+  width: 100%;
+  height: 248px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.95), rgba(2, 6, 23, 0.98));
+  border: 2px solid rgba(148, 163, 184, 0.26);
+  box-shadow: inset 0 18px 34px rgba(0, 0, 0, 0.65), inset 0 -18px 34px rgba(0, 0, 0, 0.65);
+  perspective: 900px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.roller-viewport.dragging {
+  cursor: grabbing;
+}
+
+.game-roller.readonly .roller-viewport {
+  cursor: default;
+}
+
+.roller-drum {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.roller-window {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 112px;
+  transform: translateY(-50%);
+  border-radius: 15px;
+  border: 2px solid rgba(56, 189, 248, 0.78);
+  box-shadow: 0 0 22px rgba(56, 189, 248, 0.28), inset 0 0 18px rgba(56, 189, 248, 0.12);
+  pointer-events: none;
+  z-index: 14;
+}
+
+.roller-pointer {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #38bdf8;
+  font-size: 16px;
+  font-weight: 900;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+}
+
+.roller-pointer.left { left: -9px; }
+.roller-pointer.right { right: -9px; }
+
+.roller-fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 66px;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.roller-fade-top {
+  top: 0;
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.95) 0%, rgba(2, 6, 23, 0) 100%);
+}
+
+.roller-fade-bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(2, 6, 23, 0.95) 0%, rgba(2, 6, 23, 0) 100%);
+}
+
+.roller-item {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 50%;
+  height: 102px;
+  margin-top: -51px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  gap: 13px;
+  padding: 8px 12px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transform-origin: center center;
+  will-change: transform, opacity;
+  cursor: pointer;
 }
-.game-title {
-  font-size: 14px;
-  font-weight: 800;
+
+.roller-item.active {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.24), rgba(30, 41, 59, 0.96));
+  border-color: rgba(125, 211, 252, 0.45);
 }
-.game-pill {
-  font-size: 10px;
-  font-weight: 800;
+
+.roller-item.soon {
+  filter: saturate(0.72);
+}
+
+.roller-art {
+  width: 102px;
+  height: 80px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0f172a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.roller-art-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.roller-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.roller-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roller-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roller-pill {
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
 }
-.game-desc {
+
+.roller-pill.ready {
+  background: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+}
+
+.roller-pill.soon {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+}
+
+.roller-desc {
   font-size: 12px;
   color: #cbd5e1;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.game-hint {
-  margin-top: 6px;
-  font-size: 11px;
+
+.roller-controls {
+  font-size: 10.5px;
   color: #7dd3fc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roller-meta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.roller-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.roller-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+  cursor: pointer;
+  transition: width 0.16s ease, background 0.16s ease;
+}
+
+.roller-dot.active {
+  width: 22px;
+  background: #38bdf8;
+}
+
+.roller-hint-text {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.start-match-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+@media (max-width: 520px) {
+  .roller-viewport {
+    height: 226px;
+  }
+  .roller-window {
+    left: 6px;
+    right: 6px;
+    height: 104px;
+  }
+  .roller-item {
+    left: 10px;
+    right: 10px;
+    height: 94px;
+    margin-top: -47px;
+    gap: 9px;
+    padding: 7px 9px;
+  }
+  .roller-art {
+    width: 72px;
+    height: 60px;
+  }
+  .roller-pill.ready {
+    display: none;
+  }
+  .roller-title {
+    font-size: 13.5px;
+  }
+  .roller-desc {
+    font-size: 11px;
+  }
+  .roller-controls {
+    display: none;
+  }
 }
 
 .scale-row {
@@ -1015,54 +1424,86 @@ body.play-ui-hidden .panda-ui-layer {
   opacity: 0.55;
 }
 
-.panda-charge-wrap {
-  position: fixed;
-  left: 50%;
-  bottom: max(26px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  width: min(240px, 46vw);
-  padding: 6px 10px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.85);
-  border: 2px solid #f7e231;
-  text-align: center;
-}
-
-.panda-charge-label {
-  font-size: 10px;
+.panda-timer {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 6px;
   font-weight: 900;
-  letter-spacing: 0.1em;
   color: #fef08a;
-  margin-bottom: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.panda-charge-track {
-  width: 100%;
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
-  overflow: hidden;
+.panda-timer.urgent {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.85);
+  animation: pandaTimerPulse 0.55s ease-in-out infinite alternate;
 }
 
-.panda-charge-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #59c747, #f7e231, #f28c28, #ef4444);
-  transition: width 0.04s linear;
+@keyframes pandaTimerPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.16); }
 }
 
-/* Lower-right Illustrated Cartoon Weapon Wheel (matching reference image!) */
+/* Roulette Weapon Wheel — spins LARGE in center per turn, then docks in lower-right! */
 .panda-weapon-wheel {
   position: fixed;
   right: max(14px, env(safe-area-inset-right));
   bottom: max(14px, env(safe-area-inset-bottom));
-  width: 214px;
-  height: 214px;
-  pointer-events: auto;
+  width: 196px;
+  height: 196px;
+  pointer-events: none;
   filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.55));
   user-select: none;
   touch-action: none;
+  z-index: 42;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), filter 0.25s ease;
+}
+
+.panda-weapon-wheel.roulette-center {
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(1.48);
+  z-index: 65;
+  filter: drop-shadow(0 0 36px rgba(250, 204, 21, 0.55)) drop-shadow(0 18px 34px rgba(0, 0, 0, 0.72));
+}
+
+.panda-weapon-wheel .wheel-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.panda-weapon-wheel .roulette-banner {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 2px solid #facc15;
+  color: #fef08a;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+.panda-weapon-wheel .roulette-pointer {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  line-height: 1;
+  color: #ef4444;
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.85), 0 0 2px #fef08a;
+  z-index: 3;
+  pointer-events: none;
 }
 
 .panda-weapon-wheel .wheel-svg {
@@ -1072,18 +1513,12 @@ body.play-ui-hidden .panda-ui-layer {
 }
 
 .panda-weapon-wheel .wheel-slice {
-  cursor: pointer;
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition: filter 0.1s ease;
   transform-origin: 112px 112px;
 }
 
-.panda-weapon-wheel .wheel-slice:hover {
-  filter: brightness(1.08);
-}
-
 .panda-weapon-wheel .wheel-slice.selected {
-  transform: scale(1.06);
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.92));
+  filter: brightness(1.14) drop-shadow(0 0 7px rgba(255, 255, 255, 0.92));
 }
 
 .panda-weapon-wheel .wheel-slice.selected .wheel-wedge {
@@ -1093,7 +1528,7 @@ body.play-ui-hidden .panda-ui-layer {
 
 .panda-weapon-wheel .wheel-label {
   font-family: "Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 900;
   fill: #ffffff;
   stroke: #111114;
@@ -1103,130 +1538,178 @@ body.play-ui-hidden .panda-ui-layer {
   letter-spacing: -0.02em;
 }
 
-.panda-weapon-wheel .wheel-hub {
-  cursor: pointer;
-}
-
 .panda-weapon-wheel .wheel-hub-top {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 900;
   fill: #94a3b8;
   letter-spacing: 0.08em;
 }
 
 .panda-weapon-wheel .wheel-hub-deg {
-  font-size: 13px;
+  font-size: 10.5px;
   font-weight: 900;
   fill: #fef08a;
 }
 
-/* Hide analog stick & shift right action buttons cleanly for Panda Ramen Rumble */
-.touch-overlay.panda-ramen-active .left-controls {
+/* Hide default twin-stick controls for Panda Ramen Rumble (slingshot handles aiming & firing!) */
+.touch-overlay.panda-ramen-active .left-controls,
+.touch-overlay.panda-ramen-active .right-controls {
   display: none;
 }
 
-.panda-dpad-wrap {
+/* Lower-left Angry-Birds Pull-Back Slingshot + Vertical Elevation Angle + NEXT Panda */
+.panda-slingshot-deck {
   position: fixed;
-  left: max(18px, env(safe-area-inset-left));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 44;
+  transition: opacity 0.18s ease;
+}
+
+.panda-slingshot-deck.disabled {
+  opacity: 0.45;
+}
+
+.panda-slingshot-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.panda-slingshot-pad {
+  position: relative;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+}
+
+.panda-slingshot-pad.pulling {
+  cursor: grabbing;
+}
+
+.panda-slingshot-pad .slingshot-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sling-readout {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.85);
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  color: #fef08a;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
   pointer-events: none;
 }
 
-.panda-dpad {
-  display: grid;
-  grid-template-columns: repeat(3, 48px);
-  grid-template-rows: repeat(3, 48px);
-  gap: 4px;
-  pointer-events: auto;
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.5));
+.sling-readout.cancel {
+  border-color: rgba(248, 113, 113, 0.75);
+  color: #fca5a5;
 }
 
-.dpad-btn {
+.panda-side-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  pointer-events: auto;
+  margin-bottom: 16px;
+}
+
+.panda-next-btn {
+  width: 56px;
+  height: 44px;
+  border-radius: 12px;
   border: 2px solid rgba(255, 255, 255, 0.36);
-  background: rgba(15, 23, 42, 0.78);
+  background: rgba(15, 23, 42, 0.84);
   color: #f8fafc;
   backdrop-filter: blur(8px);
-  border-radius: 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
   cursor: pointer;
-  touch-action: none;
-  padding: 0;
-  transition: transform 0.06s ease, background 0.08s ease, border-color 0.08s ease;
+  touch-action: manipulation;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.42);
 }
 
-.dpad-btn.pressed {
-  transform: scale(0.92);
+.panda-next-btn:active:not(:disabled) {
+  transform: scale(0.93);
   background: rgba(56, 189, 248, 0.85);
-  border-color: #ffffff;
-  color: #020617;
 }
 
-.dpad-up { grid-column: 2; grid-row: 1; border-radius: 14px 14px 6px 6px; }
-.dpad-left { grid-column: 1; grid-row: 2; border-radius: 14px 6px 6px 14px; }
-.dpad-center {
-  grid-column: 2;
-  grid-row: 2;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.92);
-  border: 2px solid rgba(247, 226, 49, 0.65);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  line-height: 1.05;
+.panda-next-btn:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
-.dpad-right { grid-column: 3; grid-row: 2; border-radius: 6px 14px 14px 6px; }
-.dpad-down { grid-column: 2; grid-row: 3; border-radius: 6px 6px 14px 14px; }
 
-.dpad-arrow {
+.panda-next-icon {
   font-size: 16px;
-  font-weight: 900;
   line-height: 1;
 }
 
-.dpad-tag {
+.panda-next-lbl {
   font-size: 8.5px;
   font-weight: 900;
   letter-spacing: 0.06em;
-  opacity: 0.85;
 }
 
-.dpad-center-lbl {
+.panda-angle-wrap {
+  width: 56px;
+  padding: 6px 4px 8px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.84);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.42);
+}
+
+.angle-lbl {
   font-size: 8px;
   font-weight: 900;
   letter-spacing: 0.08em;
   color: #94a3b8;
 }
 
-.dpad-center-val {
+.angle-val {
   font-size: 12px;
   font-weight: 900;
   color: #fef08a;
+  line-height: 1;
 }
 
-.touch-overlay.panda-ramen-active .right-controls {
-  right: max(240px, calc(env(safe-area-inset-right) + 236px));
-  bottom: max(20px, env(safe-area-inset-bottom));
-  gap: 10px;
-}
-
-.touch-overlay.panda-ramen-active .jump-btn {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 6px;
-}
-
-.touch-overlay.panda-ramen-active .shoot-btn {
-  width: 92px;
-  height: 92px;
+.angle-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 82px;
+  margin: 0;
+  accent-color: #facc15;
+  cursor: ns-resize;
+  touch-action: none;
 }
 
 @media (max-width: 680px) {
@@ -1258,61 +1741,55 @@ body.play-ui-hidden .panda-ui-layer {
   .panda-turn-sub {
     font-size: 10px;
   }
-  .panda-dpad {
-    grid-template-columns: repeat(3, 42px);
-    grid-template-rows: repeat(3, 42px);
+  .panda-slingshot-pad {
+    width: 128px;
+    height: 128px;
   }
   .panda-weapon-wheel {
-    width: 164px;
-    height: 164px;
+    width: 156px;
+    height: 156px;
     right: max(10px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
   }
-  .touch-overlay.panda-ramen-active .right-controls {
-    right: max(182px, calc(env(safe-area-inset-right) + 178px));
-    bottom: max(16px, env(safe-area-inset-bottom));
-  }
-  .touch-overlay.panda-ramen-active .jump-btn {
-    width: 62px;
-    height: 62px;
-  }
-  .touch-overlay.panda-ramen-active .shoot-btn {
-    width: 78px;
-    height: 78px;
+  .panda-weapon-wheel.roulette-center {
+    transform: translate(-50%, -50%) scale(1.42);
   }
 }
 
 @media (max-width: 500px) {
-  .panda-dpad-wrap {
-    left: max(10px, env(safe-area-inset-left));
-    bottom: max(12px, env(safe-area-inset-bottom));
+  .panda-slingshot-deck {
+    left: max(8px, env(safe-area-inset-left));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    gap: 6px;
   }
-  .panda-dpad {
-    grid-template-columns: repeat(3, 38px);
-    grid-template-rows: repeat(3, 38px);
-    gap: 3px;
+  .panda-slingshot-pad {
+    width: 114px;
+    height: 114px;
+  }
+  .panda-side-controls {
+    margin-bottom: 14px;
+    gap: 5px;
+  }
+  .panda-next-btn {
+    width: 48px;
+    height: 38px;
+  }
+  .panda-angle-wrap {
+    width: 48px;
+    padding: 5px 3px 6px;
+  }
+  .angle-slider {
+    height: 68px;
   }
   .panda-weapon-wheel {
-    width: 152px;
-    height: 152px;
+    width: 142px;
+    height: 142px;
     right: max(8px, env(safe-area-inset-right));
     bottom: max(10px, env(safe-area-inset-bottom));
   }
-  .touch-overlay.panda-ramen-active .right-controls {
-    flex-direction: column;
-    align-items: center;
-    right: max(164px, calc(env(safe-area-inset-right) + 162px));
-    bottom: max(14px, env(safe-area-inset-bottom));
-    gap: 8px;
-  }
-  .touch-overlay.panda-ramen-active .jump-btn {
-    width: 54px;
-    height: 54px;
-    margin-bottom: 0;
-  }
-  .touch-overlay.panda-ramen-active .shoot-btn {
-    width: 68px;
-    height: 68px;
+  .panda-weapon-wheel.roulette-center {
+    transform: translate(-50%, -50%) scale(1.36);
   }
 }
+
 
