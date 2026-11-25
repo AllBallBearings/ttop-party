@@ -30,8 +30,15 @@ const els = {
   video: document.getElementById('cameraVideo'),
   canvas: document.getElementById('arCanvas'),
   playerHudBar: document.getElementById('playerHudBar'),
+  hudMenuBtn: document.getElementById('hudMenuBtn'),
+  hudMenuPopover: document.getElementById('hudMenuPopover'),
+  hudMenuAlert: document.getElementById('hudMenuAlert'),
   arStatusDot: document.getElementById('arStatusDot'),
+  menuStatusDot: document.getElementById('menuStatusDot'),
   arStatusText: document.getElementById('arStatusText'),
+  anchorReticle: document.getElementById('anchorReticle'),
+  anchorStatusDot: document.getElementById('anchorStatusDot'),
+  anchorStatusText: document.getElementById('anchorStatusText'),
   motionBtn: document.getElementById('motionBtn'),
   replaceBtn: document.getElementById('replaceBtn'),
   modeBtn: document.getElementById('modeBtn'),
@@ -158,10 +165,25 @@ function needsArPlacement() {
   return arTracker.mode === 'ar' && (!arTracker.anchor || !arTracker.locked);
 }
 
+function closeHudMenu() {
+  if (!els.hudMenuPopover) return;
+  els.hudMenuPopover.classList.add('hidden');
+  if (els.hudMenuBtn) els.hudMenuBtn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleHudMenu() {
+  if (!els.hudMenuPopover) return;
+  const willOpen = els.hudMenuPopover.classList.contains('hidden');
+  els.hudMenuPopover.classList.toggle('hidden', !willOpen);
+  if (els.hudMenuBtn) els.hudMenuBtn.setAttribute('aria-expanded', String(willOpen));
+}
+
 function syncPlayUi() {
   const lobbyOpen = !els.lobbyModal.classList.contains('hidden');
   const inAr = arTracker.mode === 'ar';
   const placedUnpinned = inAr && Boolean(arTracker.anchor) && !arTracker.locked;
+
+  if (lobbyOpen) closeHudMenu();
 
   // Show confirmation bar right after placing/moving the AR board.
   const showConfirm = !lobbyOpen && placedUnpinned;
@@ -179,9 +201,10 @@ function syncPlayUi() {
     }
   }
 
-  // Only show touch controls when a game is active, lobby is closed, and board is ready.
+  // Only show touch controls & game HUD when a game is active, lobby is closed, and board is ready.
   const readyToPlay = Boolean(clientGame) && !lobbyOpen && (!inAr || arTracker.locked);
   els.touchOverlay.classList.toggle('hidden', !readyToPlay);
+  document.body.classList.toggle('play-ui-hidden', !readyToPlay);
 }
 
 function handleGameStarted(msg) {
@@ -194,7 +217,9 @@ function handleGameStarted(msg) {
     sendAction: (extra) => sendGameAction(extra),
   });
   arTracker.setPreviewDist(clientGame?.preferredPreviewDist || 13.5);
-  els.touchOverlay.classList.toggle('panda-ramen-active', msg.gameId === 'panda-ramen');
+  const isPanda = msg.gameId === 'panda-ramen';
+  els.touchOverlay.classList.toggle('panda-ramen-active', isPanda);
+  document.body.classList.toggle('panda-ramen-active', isPanda);
   resetActionButtons();
   els.lobbyModal.classList.add('hidden');
   els.roundBanner.classList.add('hidden');
@@ -210,6 +235,7 @@ function handleReturnedLobby() {
   currentGameId = null;
   arTracker.setPreviewDist(13.5);
   els.touchOverlay.classList.remove('panda-ramen-active');
+  document.body.classList.remove('panda-ramen-active');
   els.roundBanner.classList.add('hidden');
   els.lobbyModal.classList.remove('hidden');
   syncPlayUi();
@@ -231,18 +257,26 @@ const arTracker = new ARTracker({
   videoEl: els.video,
   canvasEl: els.canvas,
   onStatus: (status) => {
-    els.arStatusText.textContent = status.message;
-    els.arStatusDot.className = 'status-dot ' + (
+    const dotClass = 'status-dot ' + (
       status.mode === 'preview'
         ? 'preview'
-        : status.anchored && !status.stale
+        : (status.anchored && !status.stale) || status.qrSeen
           ? 'anchored'
           : 'searching'
     );
-    els.modeBtn.textContent = status.mode === 'preview' ? 'AR Cam' : '3D View';
-    els.motionBtn.style.display = status.mode === 'ar' && status.needsMotionPermission ? 'inline-flex' : 'none';
-    els.promptMotionBtn.classList.toggle('hidden', !(status.mode === 'ar' && status.needsMotionPermission));
-    els.replaceBtn.style.display = status.mode === 'ar' && status.anchored ? 'inline-flex' : 'none';
+    els.arStatusText.textContent = status.message;
+    els.arStatusDot.className = dotClass;
+    if (els.menuStatusDot) els.menuStatusDot.className = dotClass;
+    if (els.anchorStatusDot) els.anchorStatusDot.className = dotClass;
+    if (els.anchorStatusText) els.anchorStatusText.textContent = status.message;
+    if (els.anchorReticle) els.anchorReticle.classList.toggle('qr-seen', Boolean(status.qrSeen));
+
+    const needsMotion = status.mode === 'ar' && status.needsMotionPermission;
+    els.modeBtn.textContent = status.mode === 'preview' ? 'Switch to AR Camera' : 'Switch to 3D View';
+    els.motionBtn.style.display = needsMotion ? 'flex' : 'none';
+    if (els.hudMenuAlert) els.hudMenuAlert.classList.toggle('hidden', !needsMotion);
+    els.promptMotionBtn.classList.toggle('hidden', !needsMotion);
+    els.replaceBtn.style.display = status.mode === 'ar' && status.anchored ? 'flex' : 'none';
 
     const showPrompt = status.mode === 'ar' && !status.anchored;
     els.anchorPrompt.classList.toggle('hidden', !showPrompt);
@@ -829,7 +863,21 @@ els.backLobbyBtn.addEventListener('click', () => {
   if (isSelfHost()) hostController.returnToLobby();
 });
 
+if (els.hudMenuBtn) {
+  els.hudMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleHudMenu();
+  });
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!els.hudMenuPopover || els.hudMenuPopover.classList.contains('hidden')) return;
+  if (els.hudMenuPopover.contains(e.target) || els.hudMenuBtn?.contains(e.target)) return;
+  closeHudMenu();
+});
+
 els.motionBtn.addEventListener('click', () => {
+  closeHudMenu();
   sound.unlock();
   arTracker.requestMotionPermission();
 });
@@ -840,6 +888,7 @@ els.promptMotionBtn.addEventListener('click', () => {
 });
 
 els.menuBtn.addEventListener('click', () => {
+  closeHudMenu();
   arTracker.requestMotionPermission();
   els.lobbyModal.classList.toggle('hidden');
   syncPlayUi();
@@ -852,6 +901,7 @@ els.closeLobbyBtn.addEventListener('click', () => {
 });
 
 function beginMoveBoard() {
+  closeHudMenu();
   arTracker.requestMotionPermission();
   if (isSelfHost() && hostController.activeEngine) {
     hostController.setPaused(true);
@@ -877,7 +927,12 @@ els.confirmPlayBtn.addEventListener('click', () => {
 });
 
 els.modeBtn.addEventListener('click', async () => {
+  closeHudMenu();
   await arTracker.toggleMode();
+});
+
+els.fullscreenBtn.addEventListener('click', () => {
+  closeHudMenu();
 });
 
 els.scaleSlider.addEventListener('input', () => {

@@ -21,27 +21,39 @@
   <video id="cameraVideo" autoplay playsinline muted></video>
   <canvas id="arCanvas"></canvas>
 
-  <!-- Top HUD: Player Health Bars & AR Controls -->
+  <!-- Top HUD: Player Health Bars & Compact Menu -->
   <header class="top-hud">
     <div id="playerHudBar" class="player-hud-bar"></div>
 
-    <div class="ar-toolbar">
-      <div id="arStatusPill" class="ar-pill">
+    <div class="ar-menu-wrap">
+      <button id="hudMenuBtn" class="hud-menu-btn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="hudMenuPopover">
         <span id="arStatusDot" class="status-dot searching"></span>
-        <span id="arStatusText">Starting camera...</span>
+        <span class="hud-menu-icon" aria-hidden="true">☰</span>
+        <span id="hudMenuAlert" class="hud-menu-alert hidden" aria-hidden="true"></span>
+      </button>
+
+      <div id="hudMenuPopover" class="hud-menu-popover hidden" role="menu">
+        <div id="arStatusPill" class="hud-menu-status">
+          <span id="menuStatusDot" class="status-dot searching"></span>
+          <span id="arStatusText">Starting camera...</span>
+        </div>
+        <button id="motionBtn" class="hud-menu-item accent" type="button" role="menuitem" style="display:none;">Enable 360° Motion</button>
+        <button id="replaceBtn" class="hud-menu-item" type="button" role="menuitem" style="display:none;">Move Board</button>
+        <button id="modeBtn" class="hud-menu-item" type="button" role="menuitem">Switch to 3D View</button>
+        <button id="fullscreenBtn" class="hud-menu-item" type="button" role="menuitem" aria-label="Toggle fullscreen">Fullscreen</button>
+        <button id="menuBtn" class="hud-menu-item primary" type="button" role="menuitem">Games &amp; Players</button>
       </div>
-      <button id="motionBtn" class="pill-btn accent" type="button" style="display:none;">Enable Motion</button>
-      <button id="replaceBtn" class="pill-btn" type="button" style="display:none;">Move Board</button>
-      <button id="modeBtn" class="pill-btn" type="button">3D View</button>
-      <button id="fullscreenBtn" class="pill-btn" type="button" aria-label="Toggle fullscreen">Fullscreen</button>
-      <button id="menuBtn" class="pill-btn accent" type="button">Games</button>
     </div>
   </header>
 
   <!-- Center prompt when waiting for QR Anchor -->
   <div id="anchorPrompt" class="anchor-prompt hidden">
-    <div class="anchor-reticle"></div>
+    <div id="anchorReticle" class="anchor-reticle"></div>
     <p><strong>Tap the table</strong> to place the game board<br />or point at the printed <strong>QR Anchor</strong></p>
+    <div id="anchorStatusHint" class="anchor-status-hint">
+      <span id="anchorStatusDot" class="status-dot searching"></span>
+      <span id="anchorStatusText">Starting camera...</span>
+    </div>
     <button id="promptMotionBtn" class="primary-btn hidden" type="button">Tap to Enable 360° Motion</button>
     <a href="./anchor.html" target="_blank" class="anchor-link">Open Printable QR Anchor</a>
   </div>

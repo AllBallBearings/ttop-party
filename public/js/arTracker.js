@@ -36,6 +36,8 @@ export class ARTracker {
     this.anchor = null; // engine anchor the board follows
     this.markerVisible = false;
     this.lastMarkerAt = 0;
+    this.lastQrSeenAt = 0;
+    this.lastWrongQrAt = 0;
     this.cameraStarted = false;
 
     // The camera feed is drawn by WebGL in sync with tracking; the <video>
@@ -78,13 +80,27 @@ export class ARTracker {
 
     // Printed QR marker.
     this.marker = new MarkerAnchor({
-      detector: createJsQrDetector({ scriptUrl: new URL('../vendor/jsqr/jsQR.js', import.meta.url).href }),
+      detector: createJsQrDetector({
+        scriptUrl: new URL('../vendor/jsqr/jsQR.js', import.meta.url).href,
+        inversionAttempts: 'attemptBoth',
+      }),
       size: MARKER_SIZE_M,
       match: MARKER_PAYLOAD,
-      every: 3,
-      scanLongSide: 720,
+      every: 2,
+      scanLongSide: 960,
     });
     this.engine.addPipelineModule(this.marker);
+    this.engine.on('markerseen', ({ matched }) => {
+      if (this.anchor) return;
+      const now = performance.now();
+      if (matched) {
+        this.lastQrSeenAt = now;
+        this._emitStatus({ qrSeen: true, message: 'QR detected — hold steady to lock...' });
+      } else if (now - this.lastWrongQrAt > 2000) {
+        this.lastWrongQrAt = now;
+        this._emitStatus({ message: 'Different QR — use Printable QR Anchor' });
+      }
+    });
     this.engine.on('markerfound', ({ anchor }) => this._onMarker(anchor, true));
     this.engine.on('markerupdated', ({ anchor }) => this._onMarker(anchor, false));
     this.engine.on('markerlost', () => { this.markerVisible = false; this._emitStatus(); });
@@ -179,6 +195,7 @@ export class ARTracker {
   _onMarker(anchor, found) {
     this.markerVisible = true;
     this.lastMarkerAt = performance.now();
+    this.marker.o.every = 5;
     if (this.anchorSource !== 'marker' || this.anchor !== anchor) {
       // The shared marker always wins over a tap placement.
       if (this.anchorSource === 'tap' && this.anchor) this.engine.removeAnchor(this.anchor);
@@ -190,7 +207,13 @@ export class ARTracker {
 
   _tapToPlace(x, y) {
     if (this.mode !== 'ar' || this.locked || this.anchorSource === 'marker') return;
-    if (this.engine.trackingStatus !== 'NORMAL') return;
+    if (this.engine.trackingStatus !== 'NORMAL') {
+      if (!this.anchor && this.engine.trackingReason === 'RELOCALIZING') {
+        this.engine.resetTracking();
+        this._emitStatus({ message: 'Resetting tracking — tap again to place' });
+      }
+      return;
+    }
     const hit = this.ar.hitTest(x, y, [HitTestType.DETECTED_SURFACE, HitTestType.ESTIMATED_SURFACE])[0];
     if (!hit) return;
     if (this.anchor && this.anchorSource === 'tap') this.engine.removeAnchor(this.anchor);
@@ -319,6 +342,7 @@ export class ARTracker {
     this.marker.frozen = false;
     this.marker.anchor = null;
     this.marker.state = 'searching';
+    this.marker.o.every = 2;
     this.boardPivot.visible = false;
     this._emitStatus({ message: 'Tap table or scan QR to place board' });
   }
@@ -334,9 +358,11 @@ export class ARTracker {
     const reason = engine.trackingReason;
     const anchored = !!this.anchor;
     const stale = anchored && this.anchorSource === 'marker' && !this.markerVisible;
+    const qrSeen = !anchored && (performance.now() - this.lastQrSeenAt < 1200);
     let message;
     if (this.mode === 'preview') message = '3D Tabletop View';
     else if (!this.cameraStarted) message = 'Starting camera...';
+    else if (qrSeen) message = 'QR detected — hold steady to lock...';
     else if (reason === 'RELOCALIZING') message = 'Point back at the table';
     else if (!anchored) {
       message = tracking === 'NORMAL'
@@ -352,6 +378,7 @@ export class ARTracker {
       anchored,
       locked: this.locked,
       stale,
+      qrSeen,
       tracking,
       reason,
       hasImu: !!engine.imu?.available,

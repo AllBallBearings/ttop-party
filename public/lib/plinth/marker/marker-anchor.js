@@ -18,42 +18,172 @@ import { quatFromYaw, normalizeAngle, sub3, add3, scale3, norm3 } from '../core/
 import { pixelRay, projectPoint } from '../vision/geometry.js';
 
 /**
- * Detector backed by jsQR in a worker. `scriptUrl` is the URL of jsQR.js
- * (resolved against the document). Returns {detect({data,width,height}) -> Promise}.
+ * Detector backed by jsQR in a worker (with automatic main-thread fallback if
+ * the worker fails to initialize). Runs a full-frame pass followed by a
+ * contrast-enhanced center-crop pass so small, tilted, or dimly lit printed
+ * QR anchors still decode reliably on mobile cameras.
  */
-export function createJsQrDetector({ scriptUrl, inversionAttempts = 'dontInvert' } = {}) {
+export function createJsQrDetector({ scriptUrl, inversionAttempts = 'attemptBoth' } = {}) {
   const abs = new URL(scriptUrl, typeof document !== 'undefined' ? document.baseURI : undefined).href;
   const src = `
     importScripts(${JSON.stringify(abs)});
+    function formatCode(code, ox, oy) {
+      if (!code || !code.location) return null;
+      const l = code.location;
+      return {
+        data: code.data,
+        corners: [
+          { x: l.topLeftCorner.x + ox, y: l.topLeftCorner.y + oy },
+          { x: l.topRightCorner.x + ox, y: l.topRightCorner.y + oy },
+          { x: l.bottomRightCorner.x + ox, y: l.bottomRightCorner.y + oy },
+          { x: l.bottomLeftCorner.x + ox, y: l.bottomLeftCorner.y + oy },
+        ],
+      };
+    }
+    function stretchRegion(rgba, width, height, x0, y0, rw, rh) {
+      const out = new Uint8ClampedArray(rw * rh * 4);
+      let lo = 255;
+      let hi = 0;
+      for (let y = 0; y < rh; y += 2) {
+        let row = ((y0 + y) * width + x0) * 4;
+        for (let x = 0; x < rw; x += 2) {
+          const i = row + x * 4;
+          const lum = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8;
+          if (lum < lo) lo = lum;
+          if (lum > hi) hi = lum;
+        }
+      }
+      const span = Math.max(24, hi - lo);
+      const scale = 255 / span;
+      let dst = 0;
+      for (let y = 0; y < rh; y++) {
+        let row = ((y0 + y) * width + x0) * 4;
+        for (let x = 0; x < rw; x++) {
+          const i = row + x * 4;
+          const lum = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8;
+          const v = Math.max(0, Math.min(255, ((lum - lo) * scale) | 0));
+          out[dst++] = v;
+          out[dst++] = v;
+          out[dst++] = v;
+          out[dst++] = 255;
+        }
+      }
+      return out;
+    }
     self.onmessage = (e) => {
-      const { id, buffer, width, height } = e.data;
+      const { id, buffer, width, height, tryEnhanced } = e.data;
       let out = null;
       try {
-        const code = jsQR(new Uint8ClampedArray(buffer), width, height, { inversionAttempts: ${JSON.stringify(inversionAttempts)} });
+        const rgba = new Uint8ClampedArray(buffer);
+        const opts = { inversionAttempts: ${JSON.stringify(inversionAttempts)} };
+        let code = jsQR(rgba, width, height, opts);
         if (code) {
-          const l = code.location;
-          out = { data: code.data, corners: [l.topLeftCorner, l.topRightCorner, l.bottomRightCorner, l.bottomLeftCorner] };
+          out = formatCode(code, 0, 0);
+        } else if (tryEnhanced && width >= 160 && height >= 160) {
+          // Contrast-normalized center crop (covers the reticle area cleanly).
+          const rw = Math.round(width * 0.68);
+          const rh = Math.round(height * 0.68);
+          const x0 = (width - rw) >> 1;
+          const y0 = (height - rh) >> 1;
+          const crop = stretchRegion(rgba, width, height, x0, y0, rw, rh);
+          code = jsQR(crop, rw, rh, opts);
+          if (code) out = formatCode(code, x0, y0);
         }
       } catch (err) { out = null; }
       self.postMessage({ id, result: out });
     };`;
-  const worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+
+  let worker = null;
+  let workerFailed = false;
+  let mainThreadLoader = null;
   let nextId = 1;
+  let scanSeq = 0;
   const waiting = new Map();
-  worker.onmessage = (e) => {
-    const cb = waiting.get(e.data.id);
-    waiting.delete(e.data.id);
-    cb?.(e.data.result);
+
+  const failWorker = () => {
+    workerFailed = true;
+    if (worker) {
+      try { worker.terminate(); } catch {}
+      worker = null;
+    }
+    for (const [id, entry] of waiting) {
+      clearTimeout(entry.timer);
+      entry.resolve(null);
+      waiting.delete(id);
+    }
   };
+
+  try {
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    worker.onmessage = (e) => {
+      const entry = waiting.get(e.data.id);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      waiting.delete(e.data.id);
+      entry.resolve(e.data.result);
+    };
+    worker.onerror = () => failWorker();
+    worker.onmessageerror = () => failWorker();
+  } catch {
+    workerFailed = true;
+  }
+
+  const ensureMainThreadJsQr = () => {
+    if (typeof globalThis.jsQR === 'function') return Promise.resolve(globalThis.jsQR);
+    if (mainThreadLoader) return mainThreadLoader;
+    if (typeof document === 'undefined') return Promise.resolve(null);
+    mainThreadLoader = new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = abs;
+      s.async = true;
+      s.onload = () => resolve(typeof globalThis.jsQR === 'function' ? globalThis.jsQR : null);
+      s.onerror = () => resolve(null);
+      document.head.appendChild(s);
+    });
+    return mainThreadLoader;
+  };
+
   return {
     detect({ data, width, height }) {
-      const id = nextId++;
-      return new Promise((resolve) => {
-        waiting.set(id, resolve);
-        worker.postMessage({ id, buffer: data.buffer, width, height }, [data.buffer]);
+      scanSeq++;
+      const tryEnhanced = scanSeq % 2 === 0;
+      if (worker && !workerFailed) {
+        const id = nextId++;
+        return new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            if (!waiting.has(id)) return;
+            waiting.delete(id);
+            resolve(null);
+          }, 2000);
+          waiting.set(id, { resolve, timer });
+          try {
+            worker.postMessage({ id, buffer: data.buffer, width, height, tryEnhanced }, [data.buffer]);
+          } catch {
+            clearTimeout(timer);
+            waiting.delete(id);
+            failWorker();
+            resolve(null);
+          }
+        });
+      }
+      return ensureMainThreadJsQr().then((fn) => {
+        if (!fn) return null;
+        try {
+          const code = fn(data, width, height, { inversionAttempts });
+          if (!code || !code.location) return null;
+          const l = code.location;
+          return {
+            data: code.data,
+            corners: [l.topLeftCorner, l.topRightCorner, l.bottomRightCorner, l.bottomLeftCorner],
+          };
+        } catch {
+          return null;
+        }
       });
     },
-    dispose() { worker.terminate(); },
+    dispose() {
+      failWorker();
+    },
   };
 }
 
@@ -61,7 +191,7 @@ function quadIsPlausible(c) {
   const sides = [0, 1, 2, 3].map((i) => Math.hypot(c[(i + 1) % 4].x - c[i].x, c[(i + 1) % 4].y - c[i].y));
   const mn = Math.min(...sides);
   const mx = Math.max(...sides);
-  if (mn < 12 || mx / mn > 3) return false;
+  if (mn < 12 || mx / mn > 3.5) return false;
   // Convex and consistently wound.
   let sign = 0;
   for (let i = 0; i < 4; i++) {
@@ -101,6 +231,8 @@ export class MarkerAnchor {
     this.lastSeen = 0;
     this.frameCount = 0;
     this.busy = false;
+    this.busySince = 0;
+    this.lastRecoveryAt = -Infinity;
     this.pending = new Map(); // frameId -> detection waiting for its pose
     this.scaleVotes = [];
     this.calibrated = !this.o.autoScale;
@@ -129,6 +261,8 @@ export class MarkerAnchor {
     this.state = 'searching';
     this.lastSeen = 0;
     this.busy = false;
+    this.busySince = 0;
+    this.lastRecoveryAt = -Infinity;
     this.pending.clear();
     this.scaleVotes = [];
     this.calibrated = !this.o.autoScale;
@@ -142,11 +276,15 @@ export class MarkerAnchor {
 
   onCameraFrame({ engine, frame }) {
     this.frameCount++;
+    const now = performance.now();
+    if (this.busy && now - this.busySince > 2500) {
+      this.busy = false;
+    }
     if (this.busy || this.frameCount % this.o.every !== 0) return;
     const long = this.o.scanLongSide;
-    const s = long / Math.max(frame.width, frame.height);
-    const w = Math.round(frame.width * s);
-    const h = Math.round(frame.height * s);
+    const s = Math.min(1, long / Math.max(frame.width, frame.height));
+    const w = Math.max(1, Math.round(frame.width * s));
+    const h = Math.max(1, Math.round(frame.height * s));
     if (!this.canvas) {
       this.canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : document.createElement('canvas');
     }
@@ -160,6 +298,7 @@ export class MarkerAnchor {
     this.ctx.drawImage(frame.source, 0, 0, w, h);
     const img = this.ctx.getImageData(0, 0, w, h);
     this.busy = true;
+    this.busySince = now;
     const frameId = frame.id;
     const capW = frame.width;
     const capH = frame.height;
@@ -168,9 +307,22 @@ export class MarkerAnchor {
       if (session !== this.session) return;
       this.busy = false;
       if (!res || !res.corners) return;
-      if (this.o.match && !(typeof this.o.match === 'string' ? res.data === this.o.match : this.o.match.test(res.data))) return;
+      const payload = typeof res.data === 'string' ? res.data.trim() : '';
+      const matched = !this.o.match
+        || (typeof this.o.match === 'string' ? payload === this.o.match : this.o.match.test(payload));
+      engine.emit('markerseen', { data: payload, matched, trackingStatus: engine.trackingStatus });
+      if (!matched) return;
       if (!quadIsPlausible(res.corners)) return;
-      const det = { ...res, scanW: w, scanH: h, capW, capH, time: performance.now() };
+      // If SLAM is stuck in RELOCALIZING before the board is placed, seeing the
+      // QR anchor right in front of the camera breaks the deadlock immediately.
+      if (!this.anchor && engine.trackingReason === 'RELOCALIZING') {
+        const t = performance.now();
+        if (t - this.lastRecoveryAt > 1500) {
+          this.lastRecoveryAt = t;
+          engine.resetTracking();
+        }
+      }
+      const det = { ...res, data: payload, scanW: w, scanH: h, capW, capH, time: performance.now() };
       if (engine.getPose(frameId)) this._process(frameId, det);
       else {
         this.pending.set(frameId, det);
@@ -195,7 +347,8 @@ export class MarkerAnchor {
     // Only fuse sightings from frames whose camera pose is trustworthy.
     if (pose.status && pose.status !== 'NORMAL') return null;
     const rays = det.corners.map((c) => pixelRay(pose, K, c.x, c.y));
-    if (rays.some((d) => d[1] > -0.05)) return null; // must look down at the marker
+    const minDownRay = this.anchor ? -0.05 : -0.01;
+    if (rays.some((d) => d[1] > minDownRay)) return null; // must look down at the marker
 
     // Which horizontal plane is the marker on? Use trusted map points that
     // project inside the marker quad; default to the ground plane y = 0.
@@ -228,7 +381,9 @@ export class MarkerAnchor {
     const size = sides.reduce((a, b) => a + b, 0) / 4;
     const diag1 = norm3(sub3(W[2], W[0]));
     const diag2 = norm3(sub3(W[3], W[1]));
-    if (Math.max(...sides) / Math.min(...sides) > 1.35 || Math.abs(diag1 - diag2) / Math.max(diag1, diag2) > 0.25) return null;
+    const maxSideRatio = this.anchor ? 1.35 : 1.95;
+    const maxDiagErr = this.anchor ? 0.25 : 0.42;
+    if (Math.max(...sides) / Math.min(...sides) > maxSideRatio || Math.abs(diag1 - diag2) / Math.max(diag1, diag2) > maxDiagErr) return null;
     const center = scale3(add3(add3(W[0], W[1]), add3(W[2], W[3])), 0.25);
     const xAxis = add3(sub3(W[1], W[0]), sub3(W[2], W[3]));
     const yaw = Math.atan2(-xAxis[2], xAxis[0]);
